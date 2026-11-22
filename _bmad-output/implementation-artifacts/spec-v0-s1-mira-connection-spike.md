@@ -8,7 +8,7 @@ review_loop_iteration: 0
 context:
   - '{project-root}/AGENTS.md'
   - '{project-root}/docs/process/BMAD_STABLE_TDD.md'
-baseline_commit: 'NO_VCS'
+baseline_commit: '96eb8998d3e60f81c668f656c7e1ae589712bb91'
 ---
 
 <frozen-after-approval reason="human-owned intent — do not modify unless human renegotiates">
