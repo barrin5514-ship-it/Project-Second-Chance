@@ -1,0 +1,42 @@
+# Risk driven delivery sequence
+
+Updated November 20, 2026. The owner selected stable BMAD v6.12 and mandatory test-driven development. The roles and ten architecture decisions are unchanged. This is a sequencing plan, not evidence that feasibility, software or security checks have passed. Only E0-S1 is currently a ready implementation story; later slices are proposed story boundaries to refine through installed stable BMAD before their implementation.
+
+## Gate zero before foundation code
+
+Verify workspace/Git state and official BMAD 6.12.4 installation/version as described in `../process/BMAD_STABLE_TDD.md`. Confirm required tools and actual installed workflow availability in Continue. Verify disposable-file write/read/cleanup in this exact folder without touching other projects. Load approved artifacts without overwriting them. Map E0-S1 acceptance criteria to risks and tests. Report a genuine version/setup blocker rather than silently selecting another framework. R09/R10/R23/R24/R25.
+
+## Delivery order and tests before capability activation
+
+| Order and proposed slice | Dependencies and intended result | Risks and required evidence |
+| --- | --- | --- |
+| 1 E0-S1 Foundation | Current ready story. Local React/Express skeleton, visible fictional/incomplete status, safe health contract, keyboard/mobile retry and reproducible test scripts. No accounts or documents. | R05/06/07/09/10/19/20/23/24; local-only R08/21 boundary. RED/GREEN/refactor for each behavior, leak-free API responses, malformed/failing API retry, ignored runtime/secrets, version and scoped-diff evidence. Recovery controls remain pending. |
+| 2 E0-S2 Feasibility and source readiness | Begin before selecting court/model/hosting providers. Compare GA/NE official permission, coverage, fees and access; inventory versioned legal sources and review needs; identify approved fallback. This work does not require completed auth. | R01/02/04/06/07/08/10/24. Dated permission and current-cost findings or documented blockers; no paid actions or broad scraping. Model terms/consent, host restrictions and budget must be decided before their integrations activate. Research evidence is not called a TDD test. |
+| 3 E1-S1 Authentication and sessions | Maintained library/Argon2id and session ADR, access model and threat model. Users sign in/out; no pretend protected storage. | R05/11/23; RED/GREEN invalid login, throttling, CSRF, expired/revoked sessions, cookie policy and authorization failures. Independent review before private data paths. |
+| 4 E1-S2 Private cases and encrypted documents | Auth first; storage/key-management and upload-limit ADRs. SQLite metadata, separately encrypted blobs and protected derived content. | R05/12/13/19/23/25. Cross-user list/read/write/download/delete, tampered IDs/files, wrong/missing keys, content/type/size/path/parser limits, disk-full/lock/permission/interrupted-write cleanup and integrity tests. No real records. |
+| 5 E1-S3 Deletion and recoverability | Protected persistence first; exact retention/backup/key recovery decision. Delete/live-cleanup and consistent encrypted recovery. | R12/15/18/19/21. Clean restore, corruption/missing-key failure, deletion-then-restore, pending-job cancellation and ownership checks. Provider deletion promises require actual terms evidence. |
+| 6 E2-S1 Local extraction and source facts | Validated protected documents first. Supported local PDF/OCR with original evidence and separate corrections. | R05/13/14/16/20/22. Unreadable/unsupported/corrupt scans, resource limits, hostile text, span provenance and correction persistence tests. AI is still off. |
+| 7 E3-S1 Optional AI consent gateway | Provider terms and specific consent decision; auth/protected storage/source facts ready. Consent applies before any external request. | R05/07/15/16/18/23. Denial/revocation/changed scope/queue race, minimum-data canaries, provider outage/malformed output and prompt-injection tests. Refusal retains local workflows. No automatic legal output publication. |
+| 8 E4-S1 Verified legal information | Reviewed source inventory/version policy and claim-support design before legal answers activate; AI gateway only if external processing is used. | R04/07/08/16/22. Per-claim support, unrelated citation, fabricated source, wrong jurisdiction/period, stale/conflicting/missing evidence and abstention tests. Model assertions alone cannot certify claim support. |
+| 9 E5-S1 Employment notice assistant | Source spans, user-confirmed facts and any required AI/legal claim gates ready. Editable drafts and explicit review/export. | R04/14/15/16/17/20/22. Explicit/absent/conflicting dates, unclear notice type, no invented deadline, draft review/version handling and no automatic send/file. |
+| 10 E6-S1 Court discovery | Early feasibility determines permitted adapter or approved fictional/manual path. Account/case authorization ready before candidate attachment. This slice may be developed earlier after those dependencies, without waiting for notice assistance. | R01/02/03/07/16/20/22. Functional candidate search, same-name ambiguity, no-result/access failure, wrong-owner attachment, explicit selection and persistent mode labels; official manual route tested. No live interface required when approved fallback is evidenced. |
+| 11 E7-S1 Restricted demonstration and final regression | All five feature gates evidenced; hosting access/cost decision; recovery tested; no real-user activation. | R05/06/08/10/19/20/21/23/24 plus regression of every earlier risk. TLS, reviewer restrictions, anonymous denial, fictional-data inspection, restore rehearsal, browser/accessibility checks and actual independent reports. |
+
+The order keeps first-story scope small while starting the highest-uncertainty court/source investigation early. It does not postpone all security to the last week. Resolve prerequisite safety controls before activating each workflow. The approved Dec 14 presentation target remains a target; no new delivery dates or completion promises are invented.
+
+## Critical gates
+
+- No private-data capability until maintained auth, authorization, encryption/key handling and upload protections pass applicable tests.
+- No external document transmission until provider-specific terms/consent and server-side scope/revocation checks pass.
+- No legal answer until applicable claim-level support or abstention is enforced and tested. Qualified legal review remains required before real use.
+- No live court integration without demonstrated permitted access; no identity claims from candidates or user selections.
+- No hosted demo without fictional-only data, TLS, authentication, additional restricted access and recovery evidence.
+- No merge with failing required tests or unresolved critical privacy, security or legal-safety failures. Model reviews cannot replace independent human legal/security review for future production.
+
+## Risk coverage reconciliation
+
+Original approved categories R01–R08 are assigned to early feasibility, capability gates and final review. R09–R25 capture the additional approved invariants and workspace/delivery risks. A risk can span several stories; passing one test does not mitigate it everywhere. Each story must list relevant FR/NFR and risk IDs and link evidence using `../evidence/STORY_EVIDENCE_TEMPLATE.md`.
+
+## If time or external access fails
+
+Use the approved functional fictional/manual court route when live access is blocked. Keep local organization usable without AI. Report failed gates and unfinished features honestly, and ask the owner to change scope/schedule if needed; do not silently drop a mandatory feature or its safety controls. Optional avatar, collaboration and phase 2/3 work stays outside the capstone build until separately authorized.

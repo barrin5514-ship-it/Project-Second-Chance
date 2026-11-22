@@ -1,0 +1,38 @@
+# Project Second Chance
+
+## Authority and roles
+
+Read `docs/product/BMAD_Architecture_Spine.md` and `docs/product/Project_Second_Chance_PRD.md` before implementation. The Spine records approved AD-01 through AD-10; the PRD distinguishes approved decisions from proposals. A proposal is not an approval. Preserve the original FR and NFR IDs.
+
+The owner reaffirmed on 2026-11-20: DeepSeek builds; Codex independently tests; Claude reviews; the owner approves before merge. Do not impersonate the other models or claim their review occurred. Builder tests do not replace independent testing. Work on feature branches. No merge to main, push, deployment, paid service setup, or external messages without owner authorization.
+
+## Current next build target updated November 22
+
+The owner selected a bounded avatar-first local connection prototype using the Nuance Mira persona while instructor approval of the capstone remains pending. The current next build target is `docs/stories/V0-S1-mira-connection-spike.md`, with handoff `START_AVATAR_PROTOTYPE.md`. This explicit exception supersedes the older E0-S1-only and avatar-exclusion instructions only for the scope of that prototype. It does not authorize form processing, legal advice, private records, broader MVP implementation, deployment or a paid-plan change. DeepSeek still builds; Codex does not write the application in place of DeepSeek.
+
+The real `.env` must never be read into assistant context, quoted, committed, logged or placed in browser code. Server code may load it programmatically without disclosing values. Use synthetic credentials in tests. The selected avatar was accepted by a token-mint check; no live browser conversation has been verified.
+
+This folder is Project Second Chance, separate from DevSquadAI, CoachLab and brandon-portfolio. Do not edit those projects or alter global Git trust settings. Check the absolute path, existing files, Git ownership and working-tree state before changing anything. If an existing repository is discovered, preserve unrelated work.
+
+## Binding boundaries
+
+- Modular monolith; React, Vite, TypeScript, Node.js and Express; SQLite metadata with separately encrypted private documents.
+- Local and restricted hosted demonstrations use fictional data only. No real records, production launch, automatic legal eligibility, automatic sending or filing.
+- No False Hope: never invent legal eligibility, deadlines, court matches, citations or outcomes. Preserve uncertainty and source provenance.
+- Cloud AI is optional, provider-independent and explicitly consent-gated on the server. No external AI integration in the first story.
+- Use maintained server authentication/session libraries, Argon2id, per-resource authorization and established cryptographic libraries. Never hand-roll cryptography or authentication.
+- Never commit secrets, `.env` values, private databases, uploads, sensitive logs or key files. Store keys outside data snapshots and repository files.
+- Court searches require permitted access. A functional clearly labeled fictional search plus guided official lookup is an approved MVP fallback. Name matches and user selections are not identity verification.
+- Nora/Emma, advocate sharing, phase 2/3 capabilities and production access are outside the first build.
+
+## Execution and evidence
+
+Before application implementation, follow `docs/process/BMAD_STABLE_TDD.md`. Use official BMAD Method stable v6.12, pinned to npm package `bmad-method@6.12.4`; do not install the v7 preview from main, unpinned latest, or a legacy BMAD bundle from another project. A BGLAD wrapper may be used only if its underlying version and overrides are verified compatible with this baseline; the wrapper is not a substitute for checking the installed version. BMAD is not installed merely because these documents exist.
+
+Read `docs/planning/RISK_REGISTER.md` and `docs/planning/RISK_DRIVEN_DELIVERY.md`, then start with `docs/stories/E0-S1-foundation.md` and its linked plan. Do not implement the entire PRD in one pass. Record implementation choices in ADRs, distinguishing them from approved architecture. This project-specific plan supplements the installed stable BMAD workflow; Superpowers is optional and must not replace the chosen BMAD method.
+
+Mandatory TDD: write one behavior test, run it and observe the intended failure, implement the minimum behavior, run it successfully, then refactor with the suite green. Repeat for features and bug fixes. Test-runner setup may precede a behavior test; application behavior may not. A missing dependency, broken import, or compiler error is not sufficient RED evidence. Never fabricate prior RED evidence, weaken a safety assertion to obtain GREEN, or call tests written after behavior test-driven development. Preserve any pre-existing work; report missing TDD evidence honestly.
+
+Every story lists applicable risk IDs and required negative-path tests before coding. Recheck applicability at story start and completion. Future-story controls stay OPEN until evidence exists; a story can finish without closing unrelated future risks, but cannot activate the risky capability ahead of its gate. Report actual commands, versions, exit codes, test counts and limitations, plus RED/GREEN/refactor evidence and requirement/risk links. Never describe unrun tests as passing or design controls as verified security. A source inspection, manual check or configuration check is not mislabeled as a TDD behavior test.
+
+Failed required tests, critical security issues, unauthorized disclosure, unsupported legal claims or fictional/live mislabeling block completion and merge. Finish the assigned story, produce the handoff evidence, and stop for independent testing.
