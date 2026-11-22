@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "types": ["node", "vitest/globals", "@testing-library/jest-dom"],
+    "baseUrl": ".",
+    "paths": {
+      "@server/*": ["apps/server/src/*"],
+      "@web/*": ["apps/web/src/*"]
+    },
+    "noEmit": true
+  },
+  "include": ["apps/**/*.ts", "apps/**/*.tsx", "tests/**/*.ts", "scripts/**/*.mjs"],
+  "exclude": ["node_modules", "dist", "playwright-report", "test-results"]
+}
