@@ -6,11 +6,17 @@ Read `docs/product/BMAD_Architecture_Spine.md` and `docs/product/Project_Second_
 
 The owner reaffirmed on 2026-11-20: DeepSeek builds; Codex independently tests; Claude reviews; the owner approves before merge. Do not impersonate the other models or claim their review occurred. Builder tests do not replace independent testing. Work on feature branches. No merge to main, push, deployment, paid service setup, or external messages without owner authorization.
 
-## Current next build target updated November 22
+## First build target selected November 22
 
 The owner selected a bounded avatar-first local connection prototype using the Nuance Mira persona while instructor approval of the capstone remains pending. The current next build target is `docs/stories/V0-S1-mira-connection-spike.md`, with handoff `START_AVATAR_PROTOTYPE.md`. This explicit exception supersedes the older E0-S1-only and avatar-exclusion instructions only for the scope of that prototype. It does not authorize form processing, legal advice, private records, broader MVP implementation, deployment or a paid-plan change. DeepSeek still builds; Codex does not write the application in place of DeepSeek.
 
 The real `.env` must never be read into assistant context, quoted, committed, logged or placed in browser code. Server code may load it programmatically without disclosing values. Use synthetic credentials in tests. The selected avatar was accepted by a token-mint check; no live browser conversation has been verified.
+
+## Delivery update November 23
+
+The owner now reports approval of the entire Project Second Chance project. The corrected Mira prototype at `68a3c1f` passed fresh Codex checks and actual follow-up Claude review, and the owner reports a successful live rehearsal with the microphone off afterward; a read-only provider check confirmed zero active sessions. See `docs/evidence/V0-S1-live-smoke-2026-11-23.md` and the linked verification reports. This newer evidence supersedes the older no-live-conversation statement above. Owner merge approval remains separate and has not been given.
+
+The next slice follows the existing approved delivery sequence: reconcile and complete the missing E0-S1 foundation criteria using the current working code, then proceed through the planned prerequisite gates. Read `START_NEXT_BUILD.md`. Do not restart the scaffold, remove the working opt-in Mira test, or implement the entire MVP in one pass. DeepSeek now builds directly in DeepSeek Harness; Continue and the local CLI wrapper are not required. Broad project approval does not authorize production/private records, automatic legal decisions, deployment or a paid-plan change. Later story boundaries are still refined through the installed stable BMAD workflow.
 
 This folder is Project Second Chance, separate from DevSquadAI, CoachLab and brandon-portfolio. Do not edit those projects or alter global Git trust settings. Check the absolute path, existing files, Git ownership and working-tree state before changing anything. If an existing repository is discovered, preserve unrelated work.
 

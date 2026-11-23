@@ -1,5 +1,7 @@
 # Start the Mira connection prototype
 
+**Historical handoff:** the owner has since reported full project approval and a successful live Mira rehearsal. Use `START_NEXT_BUILD.md` for the next slice. The Continue-specific instructions below describe the earlier setup; DeepSeek now builds directly in Harness.
+
 The owner selected an avatar-first local feasibility test on November 22. Use this handoff instead of the older E0-S1 starter. DeepSeek writes the application code in Continue; Codex's work so far has been setup, documentation and connection verification only.
 
 ## In Continue
