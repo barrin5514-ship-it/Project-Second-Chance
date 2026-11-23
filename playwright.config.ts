@@ -17,6 +17,14 @@ export default defineConfig({
     baseURL: 'http://127.0.0.1:5173',
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
+    // The pinned SDK asks for microphone consent before it requests a token, so
+    // the no-key failure path must get past media setup to reach the server's
+    // honest 503. A fake device and a pre-granted permission keep this
+    // deterministic without a physical microphone; no provider is contacted.
+    permissions: ['microphone'],
+    launchOptions: {
+      args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'],
+    },
     // No real credential is ever provided to the browser.
     extraHTTPHeaders: {},
   },

@@ -87,17 +87,30 @@ The app still shows no simulated avatar: the elements exist only in the `ready` 
 
 The client still resets its token cache immediately on Stop. If the release request fails, the promise settles and the Start falls through to the **unchanged** server guard: no new session is bootstrapped, the one-mint-per-Start rule is untouched, and the failure is reported rather than masked. Found by Codex's independent probe (held release, immediate restart).
 
+### D12 — No token is minted before the SDK-mediated microphone consent
+
+The earlier implementation called the token function eagerly in `start()`, before `createConversation`/`connect()`. The pinned SDK itself calls `ensureMicrophone` before its `token` callback, so the eager call spent a token/start-quota slot and started the token-start lifetime before the user granted permission (found by actual Claude review and reproduced by Codex).
+
+The eager call is removed. The SDK's `token` option is the only mint path: if permission is denied, the SDK rejects `connect()` before asking for a token, so zero provider mints and zero server attempts occur. One-mint-per-Start, cached/single-flight callbacks, generation isolation and the server guard are unchanged.
+
+### D13 — Real-SDK participant access is lazy, and construction failures are recoverable
+
+The exported `@nuancelabs/js-sdk@0.40.0` conversation facade throws `Not connected — call connect() first` when its `avatar` participant is read before `connect()`. The adapter previously read it while wrapping, which would have broken the real page despite passing fake-SDK tests.
+
+`sdk.ts` now exposes a guarded lazy `avatar` getter that is evaluated only when the connection needs the participant and returns no tracks when unavailable (before connect, after disconnect, or a lifecycle-only double). `connection.syncMedia` also guards participant and track reads. Separately, `createConversation` and its event subscriptions are wrapped in try/catch: a synchronous construction/subscription failure cleans up and moves the state to `unavailable` instead of stranding `connecting`, preserving cancelled-generation checks and the release sequencing in D11.
+
 ## Verification status
 
-- Unit/integration: `npm test` → **12 files, 146 tests, exit 0**. `npm run typecheck` → exit 0. `npm run build` → exit 0 (819 kB bundle; informational warning only). `npm run verify:secrets` → exit 0; `npm run test:secrets` → 7 passed.
-- Codex's two independent acceptance probes, unchanged, now pass: `npx vitest run --config .setup/vitest.codex-review.config.ts` → 2 passed.
+- Unit/integration: `npm test` → **13 files, 150 tests, exit 0**. `npm run typecheck` → exit 0. `npm run build` → exit 0 (819 kB bundle; informational warning only). `npm run verify:secrets` → exit 0; `npm run test:secrets` → 7 passed.
+- Codex's five independent acceptance probes, unchanged, now pass: `npx vitest run --config .setup/vitest.codex-review.config.ts` → 2 passed; `npx vitest run --config .setup/vitest.codex-sdk-contract.config.ts` → 3 passed.
 - End-to-end through the **real** adapter, **real** connection wrapper and **real** Express app (only the provider HTTP call faked, synthetic credentials): 8 tests, including one-mint-per-Start, identity reuse, token-deadline behaviour, Stop→Start, delayed-release restart, failed-release rejection and stale-callback refusal.
-- Remote output: 3 real-App media tests cover attach/replacement/Stop, SDK end and unmount; no local camera and no media before Start.
-- Real-browser: `npm run test:e2e` → **26 passed, exit 0** on the pinned Chromium 131.0.6778.33 / build 1148, with provider access disabled (`PSC_E2E_NO_KEY=1`). Installing that browser required recovering the official completed artifacts after Playwright's installer stalled; this is recorded in `docs/evidence/V0-S1-builder.md`. The test timeout is 60 s to tolerate cold Vite compilation; assertions and retries are unchanged.
+- SDK contract/consent: 3 real-App tests cover wrapping the actual pinned pre-connect conversation, construction-failure recovery, and zero mint on microphone denial.
+- Remote output: 4 real-App media tests cover attach/replacement/Stop, SDK end, unmount, and a participant getter that throws before connect and after end; no local camera and no media before Start.
+- Real-browser: `npm run test:e2e` → **26 passed, exit 0** on the pinned Chromium 131.0.6778.33 / build 1148, with provider access disabled (`PSC_E2E_NO_KEY=1`). The harness pre-grants a **fake** microphone so the SDK reaches the honest 503; no physical device or provider call is used. Installing that browser required recovering the official completed artifacts after Playwright's installer stalled; this is recorded in `docs/evidence/V0-S1-builder.md`. The test timeout is 60 s to tolerate cold Vite compilation; assertions and retries are unchanged.
 - **Not verified:** a live Nuance conversation and actual provider playback/microphone permission. No live browser call was attempted with real credentials; that remains an owner-observed step. No claim is made that a live Nuance call works.
 
 
 ## Open items
 
 - Revisit D5's intent-report trust and the absence of rate limiting before any shared, hosted or multi-user use.
-- Re-check `@nuancelabs/js-sdk@0.40.0`'s event names before any SDK upgrade; the adapter is the single place that depends on them.
+- Re-check `@nuancelabs/js-sdk@0.40.0`'s participant readiness and track/event contract before any SDK upgrade; `sdk.ts` is the single place that depends on them.

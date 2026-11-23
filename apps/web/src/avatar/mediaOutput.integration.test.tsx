@@ -166,4 +166,49 @@ describe('remote Mira output', () => {
     expect(video.detach).toHaveBeenCalled();
     expect(audio.detach).toHaveBeenCalled();
   });
+
+  it('tolerates a participant getter that throws before connect and after session end', async () => {
+    const video = makeTrack();
+    const audio = makeTrack();
+    const handlers = new Set<(event: SdkConversationEvent) => void>();
+    let connected = false;
+    const conversation = {
+      get avatar() {
+        // The exported pinned facade does exactly this while there is no live
+        // session: before connect() and after disconnect/session end.
+        if (!connected) throw new Error('Not connected — call connect() first');
+        return { videoTrack: video, audioTrack: audio };
+      },
+      onChange(handler: (event: SdkConversationEvent) => void) {
+        handlers.add(handler);
+        return () => handlers.delete(handler);
+      },
+      async connect() {
+        connected = true;
+        for (const type of ['tracks-changed', 'avatar-ready', 'avatar-presented']) {
+          for (const handler of [...handlers]) handler({ type });
+        }
+      },
+      async disconnect() {
+        connected = false;
+      },
+    };
+    registerNuanceSdk((() => conversation) as unknown as NuanceFactory);
+
+    renderPrototype();
+    fireEvent.click(screen.getByRole('button', { name: /start the test/i }));
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent(/connected/i));
+    await waitFor(() => expect(video.attach).toHaveBeenCalled());
+    expect(audio.attach).toHaveBeenCalled();
+
+    // Ending the session makes the getter throw again; cleanup must not throw.
+    expect(() => {
+      act(() => {
+        for (const handler of [...handlers]) handler({ type: 'session-ended' });
+      });
+    }).not.toThrow();
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent(/ended/i));
+    expect(video.detach).toHaveBeenCalled();
+    expect(audio.detach).toHaveBeenCalled();
+  });
 });

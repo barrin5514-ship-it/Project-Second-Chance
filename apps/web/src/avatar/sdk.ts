@@ -102,8 +102,17 @@ function wrapConversation(conversation: SdkConversation): ConversationLike {
     },
     connect: () => conversation.connect(),
     disconnect: () => conversation.disconnect(),
-    // Forward the SDK's remote participant so the wrapper can attach its
-    // audio/video to the page. Optional: lifecycle-only test doubles omit it.
-    ...(conversation.avatar !== undefined ? { avatar: conversation.avatar } : {}),
+    // Do NOT read `conversation.avatar` while wrapping: the exported pinned
+    // facade throws "Not connected — call connect() first" before connect.
+    // A guarded getter reads the participant only when the connection needs
+    // it, and treats unavailable as "no tracks yet" (before connect, after
+    // disconnect, or a lifecycle-only test double).
+    get avatar() {
+      try {
+        return conversation.avatar;
+      } catch {
+        return undefined;
+      }
+    },
   };
 }

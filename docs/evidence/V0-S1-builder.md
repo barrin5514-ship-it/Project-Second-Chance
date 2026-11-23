@@ -1,6 +1,6 @@
 # V0-S1 builder evidence — Mira local connection prototype
 
-Builder: DeepSeek. Status: **BUILDER FIXES COMPLETE — STOPPED FOR CODEX RETESTING.** This file records observed results only. Codex independent testing on 2026-11-23 returned **CHANGES REQUIRED**; the two blockers it raised are fixed and evidenced below. Nothing here claims Codex acceptance, Claude review or owner merge approval. The real `.env` was not read, quoted, copied or logged at any point.
+Builder: DeepSeek. Status: **CLAUDE-TRIAGE FIXES COMPLETE — STOPPED FOR CODEX RETESTING AND FOLLOW-UP CLAUDE VERIFICATION.** This file records observed results only. Codex's synthetic retest passed, then actual Claude review found three further real-SDK/consent/error-path gaps, which Codex reproduced on `0134750` and returned **CHANGES REQUIRED**. Those three are fixed and evidenced below. Nothing here claims Codex acceptance, Claude re-review or owner merge approval. No live session was started, and the real `.env` was not read, quoted, copied or logged at any point.
 
 ## Identity and scope
 
@@ -52,8 +52,11 @@ Each row is a behaviour driven by a test that was observed failing before the mi
 | B9 A mint that resolves after the Start was closed must not be cached for a later Start (AC4, AC7) | FR-2; R05, R07 | `npx vitest run apps/web/src/avatar/tokenAdapter.test.ts` → 1 failed: `expected promise to reject, received {attemptId:"att_first", token:"st_test_first…"}`; no second mint for the new Start | `createHttpTokenAdapter` keeps an epoch; `reset()` bumps it; a mint completing under an old epoch is never cached, is reported superseded, and the consumed identity is released with a best-effort `stop` lifecycle note | `tokenAdapter.test.ts` → 2 passed (including caching/de-dup inside one open Start), exit 0; full suite 141 passed | Full-suite regression |
 | B10 Stopping during connecting must not raise a failure alert (AC5, AC7) | AC5/AC7; UX honesty | `npx vitest run apps/web/src/App.test.tsx` → 1 failed: `role="alert"` present with `That start did not work. You can try again.` after the user pressed Stop | `handleStart` ignores a rejection when the connection state is `stopped` | `App.test.tsx` → 26 passed, exit 0 | Full-suite regression |
 | B11 Real-browser request protection and phone-sized control visibility (AC1, AC2, AC6) | AC1/AC2/AC6; local token abuse, honesty | First real `npm run test:e2e`: **20 passed / 6 failed** (3 behaviours × 2 projects). `bootstrap … no permissive CORS` received `access-control-allow-origin: "*"` from the Vite dev server; preflight test same; at 375×667 the Start button was outside the viewport (`viewport ratio 0`) | `vite.config.ts`: `server.cors = false`; narrow-viewport CSS keeps the primary control as a fixed bottom action bar while the disclosure stays readable in flow | `npm run test:e2e` → **26 passed**, exit 0 (31.4 s) | Full E2E suite re-run after all later changes; still 26 passed |
-| B12 Remote Mira audio/video must reach page elements, follow `tracks-changed` and detach on Stop/end/unmount (AC6) | AC6; No False Hope (no text-only "connected" claim), media cleanup | Codex independent probe reproduced first: **1 test, 4 failing soft assertions** — no `video`, no `audio`, neither track's `attach` called. Maintained RED: `npx vitest run apps/web/src/avatar/mediaOutput.integration.test.tsx` → **1 failed**: `the page needs an output video element for Mira: expected null not to be null`, exit 1 | `ConversationLike` exposes the SDK's `avatar.videoTrack/audioTrack`; `sdk.ts` forwards them; `connection.ts` attaches on `tracks-changed`/`avatar-ready`/element registration, detaches on change and teardown; `App.tsx` renders labelled `<video>`/`<audio>` inside the connected surface and registers them only while `ready` | `mediaOutput.integration.test.tsx` → **3 passed** (one covers attach, track replacement and Stop; separate tests cover SDK end and unmount), exit 0; the unchanged Codex probe → **2 passed** | Full suite and E2E re-run; camera stays disabled and no media element exists before Start |
+| B12 Remote Mira audio/video must reach page elements, follow `tracks-changed` and detach on Stop/end/unmount (AC6) | AC6; No False Hope (no text-only "connected" claim), media cleanup | Codex independent probe reproduced first: **1 test, 4 failing soft assertions** — no `video`, no `audio`, neither track's `attach` called. Maintained RED: `npx vitest run apps/web/src/avatar/mediaOutput.integration.test.tsx` → **1 failed**: `the page needs an output video element for Mira: expected null not to be null`, exit 1 | `ConversationLike` exposes the SDK's `avatar.videoTrack/audioTrack`; `sdk.ts` forwards them; `connection.ts` attaches on `tracks-changed`/`avatar-ready`/element registration, detaches on change and teardown; `App.tsx` renders labelled `<video>`/`<audio>` inside the connected surface and registers them only while `ready` | `mediaOutput.integration.test.tsx` → **4 passed** (attach, track replacement and Stop; SDK end; unmount; a getter that throws before connect and after end), exit 0; the unchanged Codex probe → **2 passed** | Full suite and E2E re-run; camera stays disabled and no media element exists before Start |
 | B13 A new Start must wait for the prior Stop's server release instead of racing the same-session guard (AC4, AC7) | AC4/AC7; R05 (credit), R07 (token abuse) | Codex independent probe reproduced: held Stop release → `connection.start()` rejected `Could not start the conversation.` Maintained RED: new `startFlow.integration.test.ts` case with a 75 ms-delayed release → same rejection, exit 1 | `HttpTokenAdapter.closeAttempt` now returns the lifecycle POST promise; `createAvatarConnection` tracks `releasePending` and awaits it before minting; failures fall through to the unchanged server guard (no bypass, no new session, no sleep in application code) | `startFlow.integration.test.ts` → **8 passed** (including delayed release and a failed-release regression that must still reject with only 1 provider call), exit 0; the unchanged Codex probe → **2 passed** | One-mint-per-Start, stale-callback and same-session guard tests all still pass |
+| B14 Wrapping the real pinned SDK must not read its pre-connect participant (AC6) | AC6; real-SDK contract | Codex SDK-contract probe reproduced `Not connected — call connect() first`. Maintained RED: `npx vitest run apps/web/src/avatar/sdkContract.integration.test.ts` → **3 failed** (the real-SDK case threw at `createSdkAdapter().createConversation(...)`), exit 1 | `sdk.ts` no longer spreads or reads `conversation.avatar` while wrapping; a guarded lazy `avatar` getter returns undefined before connect and after disconnect; `connection.syncMedia` also guards participant and track reads | `sdkContract.integration.test.ts` → **3 passed**; the unchanged SDK probe → **3 passed** | All earlier media, adapter and integration tests still pass |
+| B15 A synchronous SDK construction failure must reach a recoverable state, not strand `connecting` (AC5) | AC5; recoverability, attempt-slot hygiene | Same maintained RED file, construction-failure case: `expected 'connecting' to be 'unavailable'`. Codex probe reproduced independently | `options.createConversation` and its event subscriptions are wrapped in try/catch; on failure `closeLifecycle()` unsubscribes/releases and the state becomes `unavailable` before the error is rethrown; cancelled-generation checks are preserved | `sdkContract.integration.test.ts` → **3 passed**; the unchanged SDK probe → **3 passed** | Delayed-release ordering test still passes |
+| B16 No token mint before the SDK-mediated microphone consent (AC3) | AC3; R05 (credit/start quota), token lifetime | Same maintained RED file, consent case: `expected "spy" to not be called at all, but actually been called 1 times`. Codex probe reproduced the same eager mint | Removed the eager `await tokenFn()` before construction. The SDK's own `token` option is the only mint path, and the pinned SDK calls it after `ensureMicrophone`; the cached/single-flight callback, generation guard and server one-mint guard are unchanged | `sdkContract.integration.test.ts` → **3 passed**; the unchanged SDK probe → **3 passed**; `connection.test.ts` 20 passed after its doubles were updated to the documented callback order | Full suite and browser suite re-run (see below) |
 
 ### Test corrections (not counted as RED/GREEN behaviour evidence)
 
@@ -70,14 +73,27 @@ Codex reviewed commit `8b2fd40` and returned **CHANGES REQUIRED** (`docs/evidenc
 - **E2E reliability only.** The independent `page.goto` timeout is treated as harness reliability, not capture evidence: `playwright.config.ts` test timeout raised from 30 s to 60 s with no assertion, retry, guard or timeout-masking change. The full suite passes 26/26.
 - **History limitation retained.** Codex did not witness B1–B7, and some of those rows include module-absence/import/test-correction failures that are not qualifying behaviour RED under AGENTS.md. I have not retroactively upgraded them; B12–B13 are this round's observed RED/GREEN.
 
+## Claude findings / Codex triage round — three fixes (2026-11-23)
+
+Codex retested `0134750`; the earlier synthetic probes and maintained checks passed, then actual Claude review identified three further gaps. Codex reproduced all three with `npx vitest run --config .setup/vitest.codex-sdk-contract.config.ts` → **3 failed**. I reproduced them in maintained tests (`sdkContract.integration.test.ts` → **3 failed**) before changing code. This was actual Codex triage; I did not perform or claim the Claude review.
+
+- **Real SDK participant must be lazy (AC6).** The exported pinned facade throws from `avatar` before `connect()`; the adapter previously read it while wrapping. `sdk.ts` now exposes a guarded getter that is evaluated only when the connection needs the participant and returns no tracks when unavailable. `connection.syncMedia` guards the participant and track reads too. A media regression also uses a getter that throws before connect and after session end: construction, attachment and cleanup stay safe.
+- **Synchronous construction failure must recover (AC5).** Construction and event subscription are now inside a try/catch: cleanup runs and the state becomes `unavailable` before the error propagates, instead of leaving `connecting`.
+- **No mint before microphone consent (AC3).** The eager pre-connect `tokenFn()` call is gone. The SDK's own token callback (called after `ensureMicrophone` in the pinned SDK) is the only mint path, so a denied microphone spends no token or attempt. One-mint-per-Start, caching, generation isolation and the server guard are unchanged.
+- **Test doubles updated to the documented order.** `connection.test.ts` fakes now invoke the `token` callback during `connect()`, as the real SDK does. This mock change is not itself behaviour evidence; B14–B16's RED evidence is the contract tests above. The no-key browser failure path now uses a **fake microphone** (`--use-fake-device-for-media-stream`, pre-granted permission) so it reaches the server's honest 503 instead of failing at the missing device; no provider is contacted and the live browser still prompts normally.
+- **Claude P3 notes** (separate pseudonymous provider end-user id, clearer timer-ended wording, speak-first smoke instructions) are recorded for consideration and were not implemented in this defect round.
+
 ## Verification — actual commands and results (2026-11-23)
 
 ```
 npm test
-exit 0 — 12 test files, 146 tests passed
+exit 0 — 13 test files, 150 tests passed
+
+npx vitest run --config .setup/vitest.codex-sdk-contract.config.ts
+exit 0 — the three unchanged Claude/Codex SDK-contract probes passed
 
 npx vitest run --config .setup/vitest.codex-review.config.ts
-exit 0 — the two unchanged Codex independent probes passed
+exit 0 — the two earlier unchanged Codex independent probes passed
 
 npm run typecheck
 exit 0 — no diagnostics (tsc 5.7.2, root tsconfig)
@@ -86,13 +102,15 @@ npx tsc --noEmit -p tsconfig.json --noUnusedLocals --noUnusedParameters
 exit 0 — no unused-symbol diagnostics
 
 npm run build
-exit 0 — vite 6.0.3, built in 2.23 s; bundle 819 kB (800 KiB).
+exit 0 — vite 6.0.3, built in 1.83 s; bundle 819 kB (800 KiB).
         The >500 kB chunk warning is informational (the pinned SDK bundle)
 
 npm run test:e2e
-exit 0 — 26 passed (24.3 s) on the pinned Chromium 131.0.6778.33 / build 1148,
+exit 0 — 26 passed (19.4 s) on the pinned Chromium 131.0.6778.33 / build 1148,
         projects chromium and chromium-narrow. Provider access disabled by
         PSC_E2E_NO_KEY=1; the API logs "No usable NUANCE_API_KEY. Start will answer 503."
+        The harness pre-grants a fake microphone so the SDK reaches that 503;
+        no physical device and no provider call are used.
 
 npm run verify:secrets
 exit 0 — "no credential leak patterns found in tracked source"
@@ -122,18 +140,18 @@ Playwright 1.49.1 pins Chromium build 1148 (131.0.6778.33). It was absent at ses
 ## Remaining blockers / limitations (must not be read as passing tests)
 
 - **Live Nuance conversation is not verified.** No live browser conversation has been run by the builder; a live smoke test needs real credentials and the owner's explicit go-ahead, and must be recorded separately with what the owner observed. The automated suites never contact the provider.
-- **Independent testing and review.** Codex independent testing has occurred once and returned CHANGES REQUIRED; these fixes are stopped for a fresh Codex verification. Claude review has not occurred; the owner has not approved merge. This report does not replace those gates.
-- **The live audiovisual exchange is still unverified.** B12 proves the page wires remote tracks into labelled media elements; it does not prove actual provider playback in a browser, microphone permission denial, live capacity behaviour or a completed conversation. Those need the owner-authorized live smoke test.
+- **Independent testing and review.** Codex retested the earlier fixes, then reproduced three actual Claude findings on `0134750` and returned CHANGES REQUIRED. These fixes are stopped for a fresh Codex retest and follow-up Claude verification. Claude review has occurred once and did not approve; the owner has not approved merge. This report does not replace those gates.
+- **The live audiovisual exchange is still unverified.** B12/B14 prove the page wires remote tracks into labelled media elements and can wrap the real pre-connect SDK safely; they do not prove actual provider playback in a browser, microphone permission denial against the real SDK, live capacity behaviour or a completed conversation. Those need the owner-authorized live smoke test, which this round did not start.
 - **No rate limiting / single local session.** The `attemptId`/CSRF design is a bounded local prototype control, not a multi-user or hosted defence. Lifecycle `started`/`stop` reports are authenticated only by session cookie + CSRF and affect only that session; revisit before shared/hosted use (ADR-001 D5).
 - **Browser timer is courtesy only.** The visible 60 s timer starts when connecting begins and calls Stop; the provider-enforced `maxSessionSeconds` is the conversation cap. A user who spends >60 s at the permission prompt is stopped early and can Start again.
-- **SDK event names** (`avatar-presented`, `session-ended`) are pinned to `0.40.0` in `sdk.ts`; re-check before any SDK upgrade.
+- **SDK contract details** (`avatar` readiness before/after connect, `tracks-changed`, `avatar-presented`, `session-ended`, `max_session_seconds` at conversation start) are pinned to `0.40.0` in `sdk.ts`; re-check before any SDK upgrade.
 - **`.env` handling.** The real `.env` was never read into model context or printed. Server code loads it programmatically; tests use synthetic `nk_test_…` / `st_test_…` values.
 - **Browser install deviation** is recorded above; the artifact is the exact pinned official build, but the installer itself did not complete on this machine.
 
 ## Files added for this story
 
-`package.json` scripts/deps, `tsconfig.json`, `vite.config.ts`, `playwright.config.ts`, `vitest.config.ts`, `apps/server/src/{main.ts,app.ts,config.ts}`, `apps/server/src/avatar/{attemptRegistry,sessionGuard,nuanceGateway}.ts` (+ tests), `apps/web/**` (App, entry, avatar adapter/connection/token adapter + tests), `tests/e2e/avatar.spec.ts`, `scripts/verify-secrets.mjs` (+ tests), `docs/adr/ADR-001-…md`, this evidence file. `.vscode/` is local owner tooling and remains untracked; `.env`, `dist/`, `test-results/`, `node_modules/`, `.setup/` are ignored.
+`package.json` scripts/deps, `tsconfig.json`, `vite.config.ts`, `playwright.config.ts`, `vitest.config.ts`, `apps/server/src/{main.ts,app.ts,config.ts}`, `apps/server/src/avatar/{attemptRegistry,sessionGuard,nuanceGateway}.ts` (+ tests), `apps/web/**` (App, entry, avatar adapter/connection/token adapter/sdk contract integration + tests), `tests/e2e/avatar.spec.ts`, `scripts/verify-secrets.mjs` (+ tests), `docs/adr/ADR-001-…md`, the Codex/Claude evidence reports, and this evidence file. `.vscode/` is local owner tooling and remains untracked; `.env`, `dist/`, `test-results/`, `node_modules/`, `.setup/` are ignored.
 
 ## Stop point
 
-The two Codex-independent-testing blockers are fixed with observed RED→GREEN tests, the two unchanged independent probes now pass, and local verification is green. No merge, push, deployment, form, legal-record or broader capstone work was performed. Stopping for a fresh Codex independent verification, then Claude review and owner merge approval.
+The three Claude-triage behaviours are fixed with observed RED→GREEN tests; all five unchanged Codex probes pass, and local verification is green. No live session, merge, push or deployment was performed, and no live credentials were used. Stopping for a fresh Codex retest and follow-up Claude verification, then owner merge approval.

@@ -174,9 +174,26 @@ export function createAvatarConnection(options: {
    * again when the page registers them or the SDK reports a change.
    */
   function syncMedia(): void {
-    const avatar = conversation?.avatar;
-    const videoTrack = avatar?.videoTrack ?? null;
-    const audioTrack = avatar?.audioTrack ?? null;
+    // The pinned facade throws from its participant getter before connect and
+    // after disconnect. Treat any unavailable participant as "no tracks yet".
+    let avatar: AvatarMediaLike | undefined;
+    try {
+      avatar = conversation?.avatar;
+    } catch {
+      avatar = undefined;
+    }
+    let videoTrack: VideoTrackLike | null = null;
+    let audioTrack: AudioTrackLike | null = null;
+    try {
+      videoTrack = avatar?.videoTrack ?? null;
+    } catch {
+      videoTrack = null;
+    }
+    try {
+      audioTrack = avatar?.audioTrack ?? null;
+    } catch {
+      audioTrack = null;
+    }
 
     if (attachedVideo !== null && attachedVideo !== videoTrack) {
       try {
@@ -301,30 +318,6 @@ export function createAvatarConnection(options: {
       return pendingTokenRequest;
     };
 
-    try {
-      // The first mint happens here, on the explicit Start, before any media.
-      await tokenFn();
-    } catch {
-      if (generation === myGeneration) {
-        closeLifecycle();
-        setState('unavailable');
-      }
-      throw new Error('Could not start the conversation.');
-    }
-    if (generation !== myGeneration) throw new Error('Start cancelled.');
-
-    const created = options.createConversation({
-      // The SDK's only token source. It reuses the identity handed to it by
-      // the server, so an internal capacity retry cannot mint a second token.
-      token: tokenFn,
-      maxSessionSeconds: MAX_SESSION_SECONDS,
-      stayConnectedOnEnd: false,
-      // Camera off in the client, mirroring the server-side token config.
-      mediaDevices: { cameraEnabled: false },
-      startOn: 'first-frame',
-    });
-    conversation = created;
-
     const guard =
       (handler: (...args: unknown[]) => void) =>
       (...args: unknown[]): void => {
@@ -332,34 +325,59 @@ export function createAvatarConnection(options: {
         handler(...args);
       };
 
-    unsubscribers.push(
-      created.on(
-        'avatar-presented',
-        guard(() => {
-          setState('ready');
-        }),
-      ),
-      created.on(
-        'session-ended',
-        guard(() => {
-          closeLifecycle();
-          setState('ended');
-        }),
-      ),
-      // Remote tracks may arrive after connect, or be replaced mid-call.
-      created.on(
-        'tracks-changed',
-        guard(() => {
-          syncMedia();
-        }),
-      ),
-      created.on(
-        'avatar-ready',
-        guard(() => {
-          syncMedia();
-        }),
-      ),
-    );
+    // The pinned SDK calls ensureMicrophone before it asks for a token, so the
+    // first mint happens inside connect(), after consent. Minting here would
+    // spend an attempt and start the token lifetime before any permission.
+    let created: ConversationLike;
+    try {
+      created = options.createConversation({
+        // The SDK's only token source. It reuses the identity handed to it by
+        // the server, so an internal capacity retry cannot mint a second token.
+        token: tokenFn,
+        maxSessionSeconds: MAX_SESSION_SECONDS,
+        stayConnectedOnEnd: false,
+        // Camera off in the client, mirroring the server-side token config.
+        mediaDevices: { cameraEnabled: false },
+        startOn: 'first-frame',
+      });
+      conversation = created;
+      unsubscribers.push(
+        created.on(
+          'avatar-presented',
+          guard(() => {
+            setState('ready');
+          }),
+        ),
+        created.on(
+          'session-ended',
+          guard(() => {
+            closeLifecycle();
+            setState('ended');
+          }),
+        ),
+        // Remote tracks may arrive after connect, or be replaced mid-call.
+        created.on(
+          'tracks-changed',
+          guard(() => {
+            syncMedia();
+          }),
+        ),
+        created.on(
+          'avatar-ready',
+          guard(() => {
+            syncMedia();
+          }),
+        ),
+      );
+    } catch (error) {
+      // A synchronous construction or subscription failure must not strand the
+      // UI in `connecting` or leave an attempt slot held.
+      if (generation === myGeneration) {
+        closeLifecycle();
+        setState('unavailable');
+      }
+      throw error instanceof Error ? error : new Error('Conversation could not be created.');
+    }
 
     try {
       await created.connect();

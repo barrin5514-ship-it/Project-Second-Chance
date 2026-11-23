@@ -22,6 +22,8 @@ interface FakeConversation extends ConversationLike {
   disconnectCalls: number;
   listeners: Map<string, Set<(...args: unknown[]) => void>>;
   emit: (event: string, ...args: unknown[]) => void;
+  /** The SDK's token callback, wired by tokenAwareFactory at construction. */
+  tokenOnConnect: (() => Promise<string>) | null;
 }
 
 /** A stand-in for the SDK conversation, so no network or device is touched. */
@@ -33,6 +35,7 @@ function makeFakeConversation(options: { failOnConnect?: Error } = {}): {
     connectCalls: 0,
     disconnectCalls: 0,
     listeners,
+    tokenOnConnect: null,
     on(event, handler) {
       const set = listeners.get(event) ?? new Set();
       set.add(handler);
@@ -42,6 +45,9 @@ function makeFakeConversation(options: { failOnConnect?: Error } = {}): {
     async connect() {
       conversation.connectCalls += 1;
       if (options.failOnConnect) throw options.failOnConnect;
+      // The real SDK asks for its token during connect, after microphone
+      // consent; a denial throws before this callback is reached.
+      if (conversation.tokenOnConnect !== null) await conversation.tokenOnConnect();
     },
     disconnect() {
       conversation.disconnectCalls += 1;
@@ -52,6 +58,20 @@ function makeFakeConversation(options: { failOnConnect?: Error } = {}): {
   };
 
   return { conversation };
+}
+
+/**
+ * A factory that wires the SDK's token callback into each fake conversation,
+ * in creation order, exactly as the real SDK does during connect().
+ */
+function tokenAwareFactory(...conversations: FakeConversation[]): CreateConversationFn {
+  let index = 0;
+  return (options) => {
+    const target = conversations[index++]!;
+    const token = options['token'];
+    target.tokenOnConnect = typeof token === 'function' ? (token as () => Promise<string>) : null;
+    return target;
+  };
 }
 
 function optionsOf(factoryOptions: unknown[]): Record<string, unknown> {
@@ -260,7 +280,7 @@ describe('lifecycle and cleanup', () => {
     expect(seen[seen.length - 1]).not.toBe('stopped');
   });
 
-  it('reports a token fetch failure as unavailable without starting media', async () => {
+  it('reports a token fetch failure as unavailable without reaching ready', async () => {
     const { conversation } = makeFakeConversation();
     const tokens: TokenProvider = {
       fetchToken: async () => {
@@ -269,13 +289,15 @@ describe('lifecycle and cleanup', () => {
       reset: () => {},
     };
     const conn = createAvatarConnection({
-      createConversation: (() => conversation) as CreateConversationFn,
+      createConversation: tokenAwareFactory(conversation),
       tokens,
     });
 
     await expect(conn.start()).rejects.toThrow();
     expect(conn.getState()).toBe('unavailable');
-    expect(conversation.connectCalls).toBe(0);
+    // The SDK asked for the token during connect, after media setup; the
+    // failure never produced a ready/connected state.
+    expect(conversation.connectCalls).toBe(1);
   });
 
   it('closes the Start lifecycle on Stop so the next explicit Start may mint again', async () => {
@@ -313,7 +335,6 @@ describe('lifecycle and cleanup', () => {
 
   it('refuses an SDK token callback that arrives after Stop, without minting again', async () => {
     const { conversation } = makeFakeConversation();
-    const factoryOptions: unknown[] = [];
     let tokenCalls = 0;
     const tokens: TokenProvider = {
       async fetchToken() {
@@ -323,10 +344,7 @@ describe('lifecycle and cleanup', () => {
       reset: () => {},
     };
     const conn = createAvatarConnection({
-      createConversation: ((o: Record<string, unknown>) => {
-        factoryOptions.push(o);
-        return conversation;
-      }) as CreateConversationFn,
+      createConversation: tokenAwareFactory(conversation),
       tokens,
     });
 
@@ -336,7 +354,7 @@ describe('lifecycle and cleanup', () => {
 
     // A delayed capacity retry from the SDK asks for a token for a Start that
     // is already over. It must be refused before any provider contact.
-    const tokenFn = optionsOf(factoryOptions)['token'] as () => Promise<string>;
+    const tokenFn = conversation.tokenOnConnect as () => Promise<string>;
     await expect(tokenFn()).rejects.toThrow();
     expect(tokenCalls).toBe(1);
   });
@@ -348,7 +366,6 @@ describe('lifecycle and cleanup', () => {
       reason: 'permission-denied',
     });
     const { conversation } = makeFakeConversation({ failOnConnect: failure });
-    const factoryOptions: unknown[] = [];
     let tokenCalls = 0;
     const tokens: TokenProvider = {
       async fetchToken() {
@@ -358,27 +375,22 @@ describe('lifecycle and cleanup', () => {
       reset: () => {},
     };
     const conn = createAvatarConnection({
-      createConversation: ((o: Record<string, unknown>) => {
-        factoryOptions.push(o);
-        return conversation;
-      }) as CreateConversationFn,
+      createConversation: tokenAwareFactory(conversation),
       tokens,
     });
 
     await expect(conn.start()).rejects.toThrow();
-    expect(tokenCalls).toBe(1);
+    // Denial happens before the SDK asks for its token.
+    expect(tokenCalls).toBe(0);
 
-    const tokenFn = optionsOf(factoryOptions)['token'] as () => Promise<string>;
+    const tokenFn = conversation.tokenOnConnect as () => Promise<string>;
     await expect(tokenFn()).rejects.toThrow();
-    expect(tokenCalls).toBe(1);
+    expect(tokenCalls).toBe(0);
   });
 
   it('does not hand a closed attempt token callback a newer Start token', async () => {
     const first = makeFakeConversation();
     const second = makeFakeConversation();
-    const conversations = [first.conversation, second.conversation];
-    const factoryOptions: Array<Record<string, unknown>> = [];
-    let index = 0;
     let tokenCalls = 0;
     const tokens: TokenProvider = {
       async fetchToken() {
@@ -388,15 +400,12 @@ describe('lifecycle and cleanup', () => {
       reset: () => {},
     };
     const conn = createAvatarConnection({
-      createConversation: ((o: Record<string, unknown>) => {
-        factoryOptions.push(o);
-        return conversations[index++]!;
-      }) as CreateConversationFn,
+      createConversation: tokenAwareFactory(first.conversation, second.conversation),
       tokens,
     });
 
     await conn.start();
-    const oldTokenFn = factoryOptions[0]!['token'] as () => Promise<string>;
+    const oldTokenFn = first.conversation.tokenOnConnect as () => Promise<string>;
     conn.stop();
     await conn.start();
 
