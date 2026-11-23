@@ -77,6 +77,10 @@ export async function mintSessionToken(options: {
     },
     end_user_id: options.endUserId,
   };
+  // `max_session_seconds` is deliberately absent: the pinned package's
+  // `SessionTokenRequest` has no duration field. The page requests the 60 s cap
+  // through the SDK's `maxSessionSeconds` option at conversation start, which
+  // the provider enforces up to the account maximum.
 
   try {
     const response = await fetchImpl(NUANCE_SESSION_TOKEN_URL, {

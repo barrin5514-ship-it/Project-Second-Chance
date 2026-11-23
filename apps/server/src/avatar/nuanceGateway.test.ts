@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { mintSessionToken, MIRA_PURPOSE_PROMPT, type FetchLike } from './nuanceGateway';
 
 const FAKE_KEY = 'nk_test_000000000000000000000000';
@@ -44,6 +44,33 @@ describe('mintSessionToken', () => {
     expect(body.personality.system_prompt).toBe(MIRA_PURPOSE_PROMPT);
     expect(body.interface_setup.video.input.camera).toBe(false);
     expect(body.end_user_id).toBe('local-avatar');
+  });
+
+  it('keeps the token-mint body on the documented contract, leaving duration to the SDK start', async () => {
+    const fetchImpl = recordingFetch(() =>
+      jsonResponse({ token: FAKE_TOKEN, expires_at: '2026-11-22T17:01:00Z' }),
+    );
+
+    await mintSessionToken({ apiKey: FAKE_KEY, endUserId: 'local-avatar', fetchImpl });
+
+    const body = JSON.parse(String((fetchImpl.calls[0] as { init: RequestInit }).init.body));
+    // Verified against the pinned package: `SessionTokenRequest` has no
+    // duration field, and the SDK sends `max_session_seconds` on the
+    // conversation-start request from its `maxSessionSeconds` option
+    // (index.js). Adding it here would assert a contract the provider does
+    // not document; the 60 s cap is covered by the web connection tests.
+    expect(body.max_session_seconds).toBeUndefined();
+
+    // The request stays a fixed contract: only these top-level keys, so no
+    // caller can smuggle in a persona, prompt or API destination.
+    expect(Object.keys(body).sort()).toEqual([
+      'end_user_id',
+      'interface',
+      'interface_setup',
+      'personality',
+    ]);
+    expect(Object.keys(body.personality).sort()).toEqual(['persona_id', 'system_prompt']);
+    expect(Object.keys(body.interface_setup).sort()).toEqual(['video']);
   });
 
   it('never puts the API key in the request body or URL', async () => {

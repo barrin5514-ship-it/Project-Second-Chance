@@ -1,0 +1,124 @@
+# V0-S1 builder evidence — Mira local connection prototype
+
+Builder: DeepSeek. Status: **BUILDER IMPLEMENTATION COMPLETE — STOPPED FOR INDEPENDENT TESTING AND REVIEW.** This file records observed results only. Nothing here claims Codex independent acceptance testing, Claude review or owner merge approval. The real `.env` was not read, quoted, copied or logged at any point.
+
+## Identity and scope
+
+- Story: `docs/stories/V0-S1-mira-connection-spike.md` (AC1–AC8). Approved spec: `_bmad-output/implementation-artifacts/spec-v0-s1-mira-connection-spike.md`.
+- Date of this checkpoint: 2026-11-23 (America/New_York). Absolute workspace: `<owner-home>\Documents\ChatGPT\Next Chapter Project\ProjectSecondChance`.
+- Branch: `feature/v0-s1-mira-spike`. VCS location/ownership verified with `git rev-parse HEAD` before edits.
+- Spec `baseline_commit` (recorded at planning): `96eb8998d3e60f81c668f656c7e1ae589712bb91`; HEAD at this session's start: `6ef92c3`.
+- BMAD: stable 6.12.4 through the project-local BGLAD launcher. `uv run --no-cache _bmad/scripts/render_skill.py --project-root <abs> --skill <abs>/.agents/skills/bmad-build` succeeded earlier in the build; spec `route: dispatch`, `status: ready-for-dev`.
+- Runtime: Node v26.13.0, npm 11.20.0. Pinned app deps in `package.json`: `@nuancelabs/js-sdk` exact `0.40.0`, express `4.21.2`, react `18.3.1`, vite `6.0.3`, vitest `2.1.8`, `@playwright/test` `1.49.1`, typescript `5.7.2`.
+- Risk IDs rechecked at start and completion: R05, R07, R08, R09, R10, R15, R16, R20, R21, R23, R24, plus prototype risks (recording disclosure, avatar overtrust, key/token leak, local token abuse, credit consumption, SDK drift, media cleanup). All remain **OPEN** for independent review; nothing in this spike closes them.
+- Explicit exclusions preserved: no forms, case data, legal advice/eligibility, private records, uploads, filing/sending, deployment, push, merge or paid-plan change. No live/paid avatar conversation was started.
+
+## Pre-existing work preserved
+
+Saved server work (tracked at `6ef92c3`): `config.ts(.test)`, `avatar/attemptRegistry.ts(.test)`, `avatar/nuanceGateway.ts(.test)`, `avatar/sessionGuard.ts(.test)`, `app.ts`, `routes.test.ts`. Untracked from earlier builder runs: `apps/web/**`, `apps/server/src/main.ts`, `tests/e2e/avatar.spec.ts`, `playwright.config.ts`, `vite.config.ts`, `package.json`, etc. Codex reports (`V0-S1-planning-check-codex.md`, `V0-S1-revised-planning-check-codex.md`, `V0-S1-codex-interim-test-check.md`, `V0-S1-codex-build-check-2026-11-23.md`) were preserved unmodified.
+
+## Observed baseline at this session's start (before any edit)
+
+```
+npx vitest run --reporter=basic
+exit 1
+Test Files  1 failed | 9 passed (10)
+Tests       1 failed | 134 passed (135)
+
+FAIL apps/server/src/avatar/nuanceGateway.test.ts > ...
+  ReferenceError: MAX_SESSION_SECONDS is not defined
+
+npm run typecheck
+exit 2
+apps/server/src/avatar/nuanceGateway.test.ts(62,12): error TS2304: Cannot find name 'MAX_SESSION_SECONDS'.
+```
+
+So the tree was **not** the state Codex reported (114 passed, typecheck clean). The failure was a half-finished edit, recorded below as a test correction — not used as fabricated RED evidence.
+
+## Test-first evidence
+
+Each row is a behaviour driven by a test that was observed failing before the minimal implementation. Rows B8–B11 are from this session; B1–B7 were recorded by the preceding builder session and are preserved here. "Full suite" means `npm test` unless stated.
+
+| Behaviour / AC | FR/NFR + risks | RED (command, expected assertion, actual failure, exit) | Minimal behaviour | GREEN (command, count, exit) | Refactor / regression |
+| --- | --- | --- | --- | --- | --- |
+| B1 Start mints exactly once per explicit Start; one server-issued `attemptId` reused (AC4, AC6) | FR-1/FR-2; R05, R07, R08, R24 | `npx vitest run apps/web/src/avatar/startFlow.integration.test.ts` → 1 failed: `Could not start the conversation.` (second Start 409; adapter `reset()` never called), exit 1 | `createAvatarConnection({createConversation, tokens})` with cached single-flight `token`; `closeLifecycle()` calls `tokens.reset()`; one module-level adapter in `App.tsx` | 6 passed; `connection.test.ts` 17 passed at that checkpoint | Full-suite regression after every change |
+| B2 Server-side attempt lifetime across the token route (started conversation outlives token-start deadline; abandoned attempt expires; cross-session refusal) (AC4, AC7) | FR-2; R07, R08, R15 | `npx vitest run apps/server/src/routes.test.ts` → 4 failed, all `expected 409/403/204, received 404` (no lifecycle route), exit 1 | `POST/GET /api/avatar/attempt-lifecycle` behind shared `authorizePost`; `AttemptRegistry.owns()`; `markStarted`/`close` wired | `routes.test.ts` → 20 passed, exit 0 | `authorizePost` extracted so token and lifecycle routes share one guard |
+| B3 An abandoned (never-started) attempt must not block its session forever (AC4, AC7) | FR-2; R07, R24 | `npx vitest run apps/server/src/avatar/attemptRegistry.test.ts` → 1 failed: `begin refused: awaiting-start` from `mustBegin`, exit 1 | `begin()` refuses only while `stillHoldsSession(record)` | 37 passed across registry + routes, exit 0 | Added direct started-conversation-past-deadline test (18 registry tests) |
+| B4 Browser reports the conversation really started, releases identity on Stop (AC4, AC6) | FR-2; R05, R07 | `npx vitest run apps/web/src/avatar/startFlow.integration.test.ts` → 2 failed: `expected false to be true` for `{active:true}`; Start-after-Stop failed, exit 1 | `TokenProvider.markStarted?/closeAttempt?`; connection calls `markStarted` after `connect()` resolves, `closeAttempt` only when a mint happened | 6 passed, exit 0 | Lifecycle POSTs fire-and-forget with swallowed rejection; identity stays single-use |
+| B5 Real SDK contract and page entry path (Codex finding 1) | AC1, AC2, AC6; prototype SDK drift | `npx vitest run apps/web/src/avatar/sdkAdapter.test.ts`: `./sdk` module did not exist; after creation one test-bug failure (`actual value must be number or bigint, received "undefined"` — test snapshotted a global primitive), corrected in the test, not the implementation | `apps/web/src/avatar/sdk.ts` maps real `onChange` event types; `main.tsx` registers the pinned factory; `App.tsx` resolves it only on Start | `sdkAdapter.test.ts` 4 passed; `entryPath.test.tsx` 2 passed; suite 134 passed; typecheck clean | Full-suite regression |
+| B6 Secrets guard | NFR secret handling; R07 | `node --test scripts/verify-secrets.test.mjs` → 1 failing (script absent). First real-tree run then exited 1 (scope bug scanned untracked `.env`; plus deliberate fixture look-alikes) | Guard sources tracked files from `git ls-files`, so ignored/untracked files including the real `.env` are never opened; fixture file skipped; no values printed | `npm run verify:secrets` exit 0; `npm run test:secrets` 7 passed | Added tracked-file scoping test |
+| B7 Browser suite execution (AC1–AC8) | All; credit-spend risk | First run: 26 failed at `browserType.launch` (pinned Chromium build 1148 absent). See "Browser environment recovery" for the completed install and the later real failures | Installed the exact pinned browser build; fixed the two genuine defects found by the real browser (B11) | `npm run test:e2e` → 26 passed, exit 0 | Re-ran full suite after every later change |
+| B8 A late SDK `token()` callback for a closed Start must not mint or borrow a token (`STALE_CALLBACK_AFTER_STOP`, `STALE_CALLBACK_AFTER_FAILURE`, `STALE_UNLOCK_NEWER`) (AC4, AC7) | FR-2; R05, R07 | `npx vitest run apps/web/src/avatar/connection.test.ts` → **3 failed / 17 passed**, exit 1. After Stop the callback resolved `"st_abc"` (a fresh mint) instead of rejecting; after a failed connect it resolved `"st_abc"`; after a newer Start an old callback resolved `"st_token_2"` (the newer Start's token) | `closeLifecycle()` ends the Start's generation; the `token` callback refuses a stale generation before any mint; `stop()` relies on the same close path | `connection.test.ts` → **20 passed**, exit 0; full suite 138 passed | Full-suite regression; the three matrix rows now have behaviour tests |
+| B9 A mint that resolves after the Start was closed must not be cached for a later Start (AC4, AC7) | FR-2; R05, R07 | `npx vitest run apps/web/src/avatar/tokenAdapter.test.ts` → 1 failed: `expected promise to reject, received {attemptId:"att_first", token:"st_test_first…"}`; no second mint for the new Start | `createHttpTokenAdapter` keeps an epoch; `reset()` bumps it; a mint completing under an old epoch is never cached, is reported superseded, and the consumed identity is released with a best-effort `stop` lifecycle note | `tokenAdapter.test.ts` → 2 passed (including caching/de-dup inside one open Start), exit 0; full suite 141 passed | Full-suite regression |
+| B10 Stopping during connecting must not raise a failure alert (AC5, AC7) | AC5/AC7; UX honesty | `npx vitest run apps/web/src/App.test.tsx` → 1 failed: `role="alert"` present with `That start did not work. You can try again.` after the user pressed Stop | `handleStart` ignores a rejection when the connection state is `stopped` | `App.test.tsx` → 26 passed, exit 0 | Full-suite regression |
+| B11 Real-browser request protection and phone-sized control visibility (AC1, AC2, AC6) | AC1/AC2/AC6; local token abuse, honesty | First real `npm run test:e2e`: **20 passed / 6 failed** (3 behaviours × 2 projects). `bootstrap … no permissive CORS` received `access-control-allow-origin: "*"` from the Vite dev server; preflight test same; at 375×667 the Start button was outside the viewport (`viewport ratio 0`) | `vite.config.ts`: `server.cors = false`; narrow-viewport CSS keeps the primary control as a fixed bottom action bar while the disclosure stays readable in flow | `npm run test:e2e` → **26 passed**, exit 0 (31.4 s) | Full E2E suite re-run after all later changes; still 26 passed |
+
+### Test corrections (not counted as RED/GREEN behaviour evidence)
+
+- **Duration field on the token-mint body.** An in-progress test expected `max_session_seconds` in `POST /session-tokens` and failed with a missing import. Verified against the pinned package: `SessionTokenRequest` has no duration field, and `index.js` line 3110-3111 sends `max_session_seconds` on the **conversation-start** request from the SDK's `maxSessionSeconds` option. The test was corrected to assert the documented token body (duration absent, exact top-level keys); the 60 s cap is asserted by `connection.test.ts` (`maxSessionSeconds === 60`, `MAX_SESSION_SECONDS === 60`). The unused server-side constant/helper was removed.
+- **A vacuous "ignores caller-supplied persona" route test** asserted an always-empty local array. It now captures the provider request body and asserts fixed `persona_id: "mira"`, the fixed purpose prompt, and absence of the caller's `emma` / `give legal advice` strings. It passed on first run after the correction; not counted as new behaviour.
+- **Unused-symbol diagnostics** in `App.tsx` and `connection.test.ts` were removed (no behaviour change); see editor diagnostics below.
+
+## Verification — actual commands and results (2026-11-23)
+
+```
+npm test
+exit 0 — 11 test files, 141 tests passed
+
+npm run typecheck
+exit 0 — no diagnostics (tsc 5.7.2, root tsconfig)
+
+npx tsc --noEmit -p tsconfig.json --noUnusedLocals --noUnusedParameters
+exit 0 — no unused-symbol diagnostics
+
+npm run build
+exit 0 — vite 6.0.3, built in 3.17 s; bundle 817.60 kB (226.76 kB gzip).
+        The >500 kB chunk warning is informational (the pinned SDK bundle)
+
+npm run test:e2e
+exit 0 — 26 passed (29-31 s) on the pinned Chromium 131.0.6778.33 / build 1148,
+        projects chromium and chromium-narrow. Provider access disabled by
+        PSC_E2E_NO_KEY=1; the API logs "No usable NUANCE_API_KEY. Start will answer 503."
+
+npm run verify:secrets
+exit 0 — "no credential leak patterns found in tracked source"
+
+npm run test:secrets
+exit 0 — 7 passed, 0 failed
+```
+
+### Browser environment recovery (honest deviation)
+
+Playwright 1.49.1 pins Chromium build 1148 (131.0.6778.33). It was absent at session start (and `chromium-1234` from another project is incompatible). `npx playwright install chromium` downloaded the **complete, exact** official artifact (`143,564,014` bytes, matching the CDN `Content-Length`; then `92,011,729` bytes for the headless shell) but stalled indefinitely extracting the 238 MB `chrome.dll` at 0 bytes, twice across sessions, leaving `__dirlock` and one orphaned process tree. I stopped only the verified installer PIDs, removed only the partial `chromium-1148` directory and stale `__dirlock`, and extracted the already-completed official zips from `%TEMP%` with Windows `tar`. I then created Playwright's own `INSTALLATION_COMPLETE` marker in each browser directory. `npx playwright install --dry-run chromium` reports the expected install locations, `(Get-Item chrome.exe).VersionInfo.FileVersion` reports `131.0.6778.33`, and the real browser suite passes. No other browser directory was modified and no unpinned binary was substituted.
+
+## Editor diagnostics reconciliation ("21 Problems" reported by the owner)
+
+- The VS Code Problems panel **cannot be observed from this CLI session**. This is a stated limitation, not a claim that the panel is empty.
+- The authoritative compiler here is the root `tsconfig.json` used by `npm run typecheck` (the same project a workspace VS Code instance loads): **0 diagnostics**. Running with `--noUnusedLocals --noUnusedParameters` (the common extra editor hints) was **0 diagnostics after cleanup**.
+- At session start the compiler had exactly **1** diagnostic (the half-finished `MAX_SESSION_SECONDS` import in a test), now resolved; 2 genuine unused-symbol hints were also removed. No diagnostic was suppressed, downgraded or ignored to reduce the count.
+- The owner's 21 entries were not reproducible from this session. They were most likely from the earlier broken tree that Codex did not see (2 failing tests / typecheck error plus transient missing-module errors during B5), but I cannot verify their messages or severity; no claim is made that all 21 are cleared. If any remain, they may be stale editor state or non-TypeScript diagnostics (for example markdown lint), which `tsc` cannot observe.
+
+## Disposition of the Codex build-check findings
+
+1. **Page startup not connected to the real SDK — addressed.** `main.tsx` now registers `createNuanceConversation` from the pinned package; `App.tsx` resolves it lazily through `createSdkAdapter`; `entryPath.test.tsx` renders the real entry path with no injection and proves a nonblank page and no SDK load before Start; the browser suite renders the real page. Not proven: a live SDK conversation (see blockers).
+2. **One-mint-per-explicit-Start contract — addressed end to end.** Production `requestToken` is the shared `HttpTokenAdapter`; it bootstraps once, presents the server-issued `attemptId` on any repeat, and dedupes in flight. `startFlow.integration.test.ts` crosses the real browser adapter, real connection wrapper and real Express app with only the provider HTTP call faked: 1 provider call per Start, 1 token POST per Start, identity reuse, deadline behaviour, Stop→Start, and stable active state past token expiry. B8/B9 add the stale/closed-Start cases.
+3. **Browser verification — completed.** Matching Chromium installed (method above); full suite 26/26 passing with provider access disabled. Environment recovery is kept separate from application assertions; the first real run exposed two genuine application/config defects (B11), now fixed.
+4. **Missing artifacts — completed.** `scripts/verify-secrets.mjs` + tests, `docs/adr/ADR-001-mira-spike-attempt-identity-and-sdk-adapter.md`, and this report now exist.
+
+## Remaining blockers / limitations (must not be read as passing tests)
+
+- **Live Nuance conversation is not verified.** No live browser conversation has been run by the builder; a live smoke test needs real credentials and the owner's explicit go-ahead, and must be recorded separately with what the owner observed. The automated suites never contact the provider.
+- **Independent testing and review have not happened.** Codex must run its independent tests; Claude review must occur; the owner approves merge. This report does not replace them.
+- **No rate limiting / single local session.** The `attemptId`/CSRF design is a bounded local prototype control, not a multi-user or hosted defence. Lifecycle `started`/`stop` reports are authenticated only by session cookie + CSRF and affect only that session; revisit before shared/hosted use (ADR-001 D5).
+- **Browser timer is courtesy only.** The visible 60 s timer starts when connecting begins and calls Stop; the provider-enforced `maxSessionSeconds` is the conversation cap. A user who spends >60 s at the permission prompt is stopped early and can Start again.
+- **SDK event names** (`avatar-presented`, `session-ended`) are pinned to `0.40.0` in `sdk.ts`; re-check before any SDK upgrade.
+- **`.env` handling.** The real `.env` was never read into model context or printed. Server code loads it programmatically; tests use synthetic `nk_test_…` / `st_test_…` values.
+- **Browser install deviation** is recorded above; the artifact is the exact pinned official build, but the installer itself did not complete on this machine.
+
+## Files added for this story
+
+`package.json` scripts/deps, `tsconfig.json`, `vite.config.ts`, `playwright.config.ts`, `vitest.config.ts`, `apps/server/src/{main.ts,app.ts,config.ts}`, `apps/server/src/avatar/{attemptRegistry,sessionGuard,nuanceGateway}.ts` (+ tests), `apps/web/**` (App, entry, avatar adapter/connection/token adapter + tests), `tests/e2e/avatar.spec.ts`, `scripts/verify-secrets.mjs` (+ tests), `docs/adr/ADR-001-…md`, this evidence file. `.vscode/` is local owner tooling and remains untracked; `.env`, `dist/`, `test-results/`, `node_modules/`, `.setup/` are ignored.
+
+## Stop point
+
+Implementation and local verification for the approved V0-S1 scope are complete. No merge, push, deployment, form, legal-record or broader capstone work was performed. Stopping for actual Codex independent testing, Claude review and owner merge approval.

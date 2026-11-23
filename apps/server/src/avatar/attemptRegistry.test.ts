@@ -112,6 +112,24 @@ describe('AttemptRegistry', () => {
     expect(reg.canMint(attempt.id, 'session-a')).toBe(true);
   });
 
+  it('lets a genuinely new attempt mint after an abandoned attempt expired', () => {
+    const clock = fakeClock();
+    const reg = new AttemptRegistry({ clock, tokenTtlMs: TOKEN_TTL_MS });
+    const abandoned = mustBegin(reg, 'session-a');
+    reg.consume(abandoned.id, 'session-a');
+
+    // The browser gives up without ever starting a conversation.
+    clock.advance(TOKEN_TTL_MS + 1);
+
+    // A new explicit Start: its deadline runs from now, not from the first Start.
+    const fresh = mustBegin(reg, 'session-a');
+    expect(fresh.id).not.toBe(abandoned.id);
+    expect(reg.canMint(fresh.id, 'session-a')).toBe(true);
+    expect(reg.consume(fresh.id, 'session-a')).toBe(true);
+    // The expired identity stays dead.
+    expect(reg.consume(abandoned.id, 'session-a')).toBe(false);
+  });
+
   it('rejects unknown attempt ids', () => {
     const reg = new AttemptRegistry({ clock: fakeClock(), tokenTtlMs: TOKEN_TTL_MS });
     expect(reg.canMint('attempt_does_not_exist', 'session-a')).toBe(false);
@@ -159,6 +177,19 @@ describe('AttemptRegistry session exclusivity', () => {
 
     const second = reg.begin('session-a');
     expect(second.ok).toBe(false);
+  });
+
+  it('keeps refusing a new Start while a started conversation outlives the token deadline', () => {
+    const clock = fakeClock();
+    const reg = new AttemptRegistry({ clock, tokenTtlMs: TOKEN_TTL_MS });
+    const first = mustBegin(reg, 'session-a');
+    reg.consume(first.id, 'session-a');
+    reg.markStarted(first.id, 'session-a');
+
+    clock.advance(TOKEN_TTL_MS * 10);
+    const second = reg.begin('session-a');
+    expect(second.ok).toBe(false);
+    if (!second.ok) expect(second.reason).toBe('attempt-in-progress');
   });
 
   it('allows a new Start once the previous attempt is closed', () => {

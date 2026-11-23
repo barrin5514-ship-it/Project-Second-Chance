@@ -13,7 +13,8 @@
     "dev": "concurrently -k -n api,web -c blue,green \"npm:dev:api\" \"npm:dev:web\"",
     "dev:api": "tsx watch apps/server/src/main.ts",
     "dev:web": "vite",
-    "verify:secrets": "node scripts/verify-secrets.mjs"
+    "verify:secrets": "node scripts/verify-secrets.mjs",
+    "test:secrets": "node --test scripts/verify-secrets.test.mjs"
   },
   "dependencies": {
     "@nuancelabs/js-sdk": "0.40.0",

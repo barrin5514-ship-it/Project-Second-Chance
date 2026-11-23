@@ -82,15 +82,11 @@ export function createApp(deps: AppDependencies): Express {
     res.status(200).json({ csrfToken });
   });
 
-  app.all('/api/avatar/session-token', (req: Request, res: Response) => {
-    if (req.method !== 'POST') {
-      res.status(405).json(GENERIC.method);
-      return;
-    }
-
+  /** Origin, session cookie and double-submit CSRF, in one place for both POST routes. */
+  function authorizePost(req: Request, res: Response): { sessionId: string } | null {
     if (!originAllowedForPost(req.headers.origin, allowedOrigins)) {
       res.status(403).json(GENERIC.forbidden);
-      return;
+      return null;
     }
 
     const cookies = req.cookies as Record<string, unknown> | undefined;
@@ -101,10 +97,22 @@ export function createApp(deps: AppDependencies): Express {
     const headerToken = req.headers[CSRF_HEADER];
     const headerValue = Array.isArray(headerToken) ? headerToken[0] : headerToken;
 
-    if (session === undefined || !safeEqual(headerValue, session.csrfToken)) {
+    if (sessionId === undefined || session === undefined || !safeEqual(headerValue, session.csrfToken)) {
       res.status(403).json(GENERIC.forbidden);
+      return null;
+    }
+    return { sessionId };
+  }
+
+  app.all('/api/avatar/session-token', (req: Request, res: Response) => {
+    if (req.method !== 'POST') {
+      res.status(405).json(GENERIC.method);
       return;
     }
+
+    const authorized = authorizePost(req, res);
+    if (authorized === null) return;
+    const { sessionId } = authorized;
 
     if (!deps.hasApiKey) {
       res.status(503).json(GENERIC.unavailable);
@@ -118,6 +126,70 @@ export function createApp(deps: AppDependencies): Express {
 
     // Everything above is decided before the provider can be contacted.
     void handleMint(req, res, deps, apiKey, sessionId as string);
+  });
+
+  /**
+   * Browser-reported attempt lifecycle for the one identity that browser session
+   * holds. Auth-guarded exactly like the token route; never contacts the provider.
+   *
+   * - POST {attemptId, action:'started'} records that the conversation began, so
+   *   the token-start deadline no longer applies to this attempt.
+   * - POST {attemptId, action:'stop'} releases the session's active attempt.
+   *   Only resource cleanup: the consumed identity can never mint again.
+   * - GET ?attemptId=… reports whether the attempt still counts as active.
+   *
+   * An unknown id, or another session's id, is refused with a generic 409.
+   */
+  app.all('/api/avatar/attempt-lifecycle', (req: Request, res: Response) => {
+    res.setHeader('Cache-Control', 'no-store');
+
+    if (req.method === 'GET') {
+      const host = req.headers.host;
+      if (!isLoopbackHost(host)) {
+        res.status(403).json(GENERIC.forbidden);
+        return;
+      }
+      const attemptId = typeof req.query['attemptId'] === 'string' ? req.query['attemptId'] : '';
+      const cookies = req.cookies as Record<string, unknown> | undefined;
+      const sessionId = typeof cookies?.[SESSION_COOKIE] === 'string'
+        ? (cookies[SESSION_COOKIE] as string)
+        : undefined;
+      if (sessionId === undefined || !sessions.has(sessionId) || attemptId.length === 0) {
+        res.status(403).json(GENERIC.forbidden);
+        return;
+      }
+      // Read-only status: no CSRF value is needed or disclosed.
+      res.status(200).json({ active: deps.registry.isSessionActive(attemptId, sessionId) });
+      return;
+    }
+
+    if (req.method !== 'POST') {
+      res.status(405).json(GENERIC.method);
+      return;
+    }
+
+    const authorized = authorizePost(req, res);
+    if (authorized === null) return;
+    const { sessionId } = authorized;
+
+    const attemptId = readString(req.body, 'attemptId');
+    const action = readString(req.body, 'action');
+    if (attemptId === null || (action !== 'started' && action !== 'stop')) {
+      res.status(409).json(GENERIC.tooMany);
+      return;
+    }
+
+    if (!deps.registry.owns(attemptId, sessionId)) {
+      res.status(409).json(GENERIC.tooMany);
+      return;
+    }
+
+    if (action === 'started') {
+      deps.registry.markStarted(attemptId, sessionId);
+    } else {
+      deps.registry.close(attemptId, sessionId, 'stopped');
+    }
+    res.status(204).end();
   });
 
   return app;

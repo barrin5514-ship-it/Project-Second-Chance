@@ -62,12 +62,13 @@ export class AttemptRegistry {
     const activeId = this.activeBySession.get(sessionId);
     if (activeId !== undefined) {
       const active = this.attempts.get(activeId);
-      if (active !== undefined && !active.closed) {
+      if (active !== undefined && !active.closed && this.stillHoldsSession(active)) {
         return {
           ok: false,
           reason: active.consumed && !active.conversationStarted ? 'awaiting-start' : 'attempt-in-progress',
         };
       }
+      // Released or abandoned: this session's next attempt owns the slot.
       this.activeBySession.delete(sessionId);
     }
 
@@ -119,6 +120,30 @@ export class AttemptRegistry {
     const record = this.lookup(attemptId, sessionId);
     if (record === null) return false;
     return record.conversationStarted;
+  }
+
+  /**
+   * Whether this browser session may still act on the identity at all. False
+   * for an unknown id, another session's id, or an attempt already released.
+   * A started conversation past the token-start deadline is still owned.
+   */
+  owns(attemptId: string, sessionId: string): boolean {
+    const record = this.lookup(attemptId, sessionId);
+    if (record === null) return false;
+    return !record.closed;
+  }
+
+  /**
+   * Whether the record may still occupy its browser session's one slot.
+   *
+   * A running conversation holds the slot regardless of the token-start
+   * deadline. Otherwise the deadline decides: an attempt that never started a
+   * conversation is abandoned once it passes, so a dead browser session cannot
+   * block every later explicit Start until the server restarts.
+   */
+  private stillHoldsSession(record: Record): boolean {
+    if (record.conversationStarted) return true;
+    return this.clock.now() <= record.startDeadlineMs;
   }
 
   private lookup(attemptId: string, sessionId: string): Record | null {

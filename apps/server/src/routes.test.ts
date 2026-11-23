@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import request from 'supertest';
 import { createApp, LOCAL_ORIGINS } from './app';
-import { AttemptRegistry } from './avatar/attemptRegistry';
-import type { FetchLike } from './avatar/nuanceGateway';
+import { AttemptRegistry, type Clock } from './avatar/attemptRegistry';
+import { MIRA_PURPOSE_PROMPT, type FetchLike } from './avatar/nuanceGateway';
 
 const FAKE_KEY = 'nk_test_000000000000000000000000';
 const FAKE_TOKEN = 'st_test_000000000000000000000000';
@@ -18,30 +18,53 @@ function jsonResponse(body: unknown, status = 200): Response {
 interface Harness {
   app: ReturnType<typeof createApp>;
   fetchImpl: FetchLike & { calls: number };
+  clock: Clock & { advance(ms: number): void };
+  /** Exact JSON bodies sent to the provider, so fixed fields can be asserted. */
+  providerBodies: string[];
+}
+
+function fakeClock(startMs = Date.UTC(2026, 10, 23, 12, 0, 0)): Clock & { advance(ms: number): void } {
+  let now = startMs;
+  return {
+    now: () => now,
+    advance: (ms: number) => {
+      now += ms;
+    },
+  };
 }
 
 function harness(opts: {
   hasApiKey?: boolean;
   provider?: () => Promise<Response> | Response;
   registry?: AttemptRegistry;
+  clock?: Clock;
 } = {}): Harness {
   let calls = 0;
+  const providerBodies: string[] = [];
   const provider = opts.provider ?? (() => jsonResponse({ token: FAKE_TOKEN, expires_at: 'x' }));
-  const impl = async (): Promise<Response> => {
+  const impl = async (_input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     calls += 1;
+    if (init?.body !== undefined) providerBodies.push(String(init.body));
     return provider();
   };
   const fetchImpl = impl as unknown as FetchLike & { calls: number };
   Object.defineProperty(fetchImpl, 'calls', { get: () => calls });
 
+  const clock = opts.clock ?? fakeClock();
   const app = createApp({
     hasApiKey: opts.hasApiKey ?? true,
     readApiKey: () => (opts.hasApiKey === false ? null : FAKE_KEY),
     fetchImpl,
-    registry: opts.registry ?? new AttemptRegistry({ clock: { now: () => Date.now() }, tokenTtlMs: 60_000 }),
-    clock: { now: () => Date.now() },
+    registry:
+      opts.registry ?? new AttemptRegistry({ clock, tokenTtlMs: 60_000 }),
+    clock,
   });
-  return { app, fetchImpl };
+  return {
+    app,
+    fetchImpl,
+    clock: clock as Clock & { advance(ms: number): void },
+    providerBodies,
+  };
 }
 
 /** Bootstrap and return the cookie plus CSRF header value. */
@@ -118,13 +141,12 @@ describe('POST /api/avatar/session-token', () => {
   });
 
   it('ignores caller-supplied persona or prompt', async () => {
-    const bodies: string[] = [];
-    const { app } = harness({
+    const { app, providerBodies } = harness({
       provider: () => jsonResponse({ token: FAKE_TOKEN, expires_at: 'x' }),
     });
     const { cookie, csrf } = await bootstrap(app);
 
-    await request(app)
+    const res = await request(app)
       .post('/api/avatar/session-token')
       .set('Host', '127.0.0.1:3001')
       .set('Origin', LOCAL)
@@ -132,7 +154,16 @@ describe('POST /api/avatar/session-token', () => {
       .set('x-psc-csrf', csrf)
       .send({ persona_id: 'emma', system_prompt: 'give legal advice' });
 
-    expect(bodies).toHaveLength(0);
+    // The request still succeeds, but never with the caller's persona.
+    expect(res.status).toBe(200);
+    expect(providerBodies).toHaveLength(1);
+    const sent = JSON.parse(providerBodies[0] as string) as {
+      personality: { persona_id: string; system_prompt: string };
+    };
+    expect(sent.personality.persona_id).toBe('mira');
+    expect(sent.personality.system_prompt).toBe(MIRA_PURPOSE_PROMPT);
+    expect(JSON.stringify(sent)).not.toContain('emma');
+    expect(JSON.stringify(sent)).not.toContain('give legal advice');
   });
 
   it('rejects a foreign Origin before contacting the provider', async () => {
@@ -296,15 +327,13 @@ describe('POST /api/avatar/session-token', () => {
         resolveProvider = resolve;
       });
     }) as unknown as FetchLike;
+    const clock = fakeClock();
     const app = createApp({
       hasApiKey: true,
       readApiKey: () => FAKE_KEY,
       fetchImpl,
-      registry: new AttemptRegistry({
-        clock: { now: () => Date.now() },
-        tokenTtlMs: 60_000,
-      }),
-      clock: { now: () => Date.now() },
+      registry: new AttemptRegistry({ clock, tokenTtlMs: 60_000 }),
+      clock,
     });
     const { cookie, csrf } = await bootstrap(app);
 
@@ -328,5 +357,115 @@ describe('POST /api/avatar/session-token', () => {
     resolveProvider?.(jsonResponse({ token: FAKE_TOKEN, expires_at: 'x' }));
     const first = await inFlight;
     expect(first.status).toBe(200);
+  });
+});
+
+describe('attempt lifetime across the token route (fake clock)', () => {
+  async function mint(
+    app: ReturnType<typeof createApp>,
+    auth: { cookie: string; csrf: string },
+    body: Record<string, unknown> = {},
+  ) {
+    return request(app)
+      .post('/api/avatar/session-token')
+      .set('Host', '127.0.0.1:3001')
+      .set('Origin', LOCAL)
+      .set('Cookie', auth.cookie)
+      .set('x-psc-csrf', auth.csrf)
+      .send(body);
+  }
+
+  async function lifecycle(
+    app: ReturnType<typeof createApp>,
+    auth: { cookie: string; csrf: string },
+    attemptId: string,
+    action: 'started' | 'stop',
+  ) {
+    const res = await request(app)
+      .post('/api/avatar/attempt-lifecycle')
+      .set('Host', '127.0.0.1:3001')
+      .set('Origin', LOCAL)
+      .set('Cookie', auth.cookie)
+      .set('x-psc-csrf', auth.csrf)
+      .send({ attemptId, action });
+    return res;
+  }
+
+  it('keeps an already-started conversation active past the token start deadline', async () => {
+    const { app, clock, fetchImpl } = harness();
+    const auth = await bootstrap(app);
+
+    const first = await mint(app, auth);
+    expect(first.status).toBe(200);
+    const attemptId = (first.body as { attemptId: string }).attemptId;
+
+    // The conversation started; only now does the token-start lifetime elapse.
+    const started = await lifecycle(app, auth, attemptId, 'started');
+    expect(started.status).toBe(204);
+    clock.advance(60_000 * 10);
+
+    const status = await request(app)
+      .get('/api/avatar/attempt-lifecycle')
+      .query({ attemptId })
+      .set('Host', '127.0.0.1:3001')
+      .set('Cookie', auth.cookie);
+    expect(status.status).toBe(200);
+    expect(status.body).toEqual({ active: true });
+
+    // A new Start is still refused while that conversation holds the session.
+    const second = await mint(app, auth);
+    expect(second.status).toBe(409);
+    expect(fetchImpl.calls).toBe(1);
+  });
+
+  it('refuses an unminted attempt after its deadline and allows a fresh explicit Start', async () => {
+    const { app, clock, fetchImpl } = harness();
+    const auth = await bootstrap(app);
+
+    const first = await mint(app, auth);
+    const oldAttempt = (first.body as { attemptId: string }).attemptId;
+    expect(fetchImpl.calls).toBe(1);
+
+    // The pending attempt is abandoned; a retry for that identity is refused
+    // before the provider and does not free the session.
+    clock.advance(60_001);
+    const stale = await mint(app, auth, { attemptId: oldAttempt });
+    expect(stale.status).toBe(409);
+    expect(fetchImpl.calls).toBe(1);
+
+    // A genuine new Start names a new identity, then mints exactly once.
+    const fresh = await mint(app, auth);
+    expect(fresh.status).toBe(200);
+    expect(fetchImpl.calls).toBe(2);
+  });
+
+  it('refuses lifecycle updates from another browser session', async () => {
+    const { app } = harness();
+    const owner = await bootstrap(app);
+    const other = await bootstrap(app);
+
+    const first = await mint(app, owner);
+    const attemptId = (first.body as { attemptId: string }).attemptId;
+
+    const hijackStop = await lifecycle(app, other, attemptId, 'stop');
+    expect(hijackStop.status).toBe(409);
+
+    const hijackStart = await lifecycle(app, other, attemptId, 'started');
+    expect(hijackStart.status).toBe(409);
+  });
+
+  it('rejects lifecycle updates without CSRF protection', async () => {
+    const { app } = harness();
+    const auth = await bootstrap(app);
+    const first = await mint(app, auth);
+    const attemptId = (first.body as { attemptId: string }).attemptId;
+
+    const noCsrf = await request(app)
+      .post('/api/avatar/attempt-lifecycle')
+      .set('Host', '127.0.0.1:3001')
+      .set('Origin', LOCAL)
+      .set('Cookie', auth.cookie)
+      .send({ attemptId, action: 'stop' });
+    expect(noCsrf.status).toBe(403);
   });
 });
