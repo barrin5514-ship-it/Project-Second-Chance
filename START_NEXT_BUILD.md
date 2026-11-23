@@ -1,3 +1,17 @@
+# Current next step — E0-S2 source readiness
+
+Updated November 23, 2026 after the owner's explicit local merge approval. Mira and E0-S1 passed Codex independent verification and actual Claude follow-up. The approved work is now integrated in local `main` at `04a0fb8dcad1d539aaf44e56d28fe63d6e9d8dec`; see `docs/evidence/E0-S1-merge-result.md`. The reports' earlier pending-owner-approval labels are historical and superseded for that integration only.
+
+## DeepSeek: start here
+
+The prepared branch is `feature/e0-s2-source-readiness`. Read `docs/stories/E0-S2-source-readiness.md` and execute only its bounded research scope using the installed stable BMAD 6.12.4 workflow. Investigate official Georgia/Nebraska court access and authoritative legal sources, record dated evidence and unknowns, recommend permitted access or the approved fictional/manual fallback, then stop with the research handoff. Do not rebuild the foundation, start authentication or activate court/provider integration.
+
+The story supplies exact deliverable paths, requirement/risk links, acceptance criteria, evidence rules and boundaries. DeepSeek still builds/investigates; Codex verifies independently; actual Claude reviews; the owner approves each merge. This new story has no merge, push, deployment, paid access, real-record query or live-provider authorization. Preserve owner-local `.vscode/` and all prior evidence. Research is not TDD; mandatory TDD applies when a later story adds behavior.
+
+## Historical handoff — completed E0-S1
+
+The remainder below records the earlier foundation handoff. It is context only; do not execute it again. Current next-step instructions above supersede its immediate target and old unmerged/pending-approval statements.
+
 # Next build after the Mira rehearsal
 
 Updated November 23, 2026. The owner reports the entire Project Second Chance project is approved, the live Mira test worked well, and the microphone turned off after the test. Codex confirmed zero active provider sessions. Codex and actual Claude verification of the corrected prototype are saved in `docs/evidence/V0-S1-codex-retest-68a3c1f.md` and `docs/evidence/V0-S1-claude-followup-68a3c1f.md`; live evidence is `docs/evidence/V0-S1-live-smoke-2026-11-23.md`.
