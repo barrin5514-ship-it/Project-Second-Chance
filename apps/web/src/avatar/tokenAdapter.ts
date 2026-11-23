@@ -16,9 +16,9 @@ export interface HttpTokenAdapter {
   /** Ends the current Start's lifecycle so a fresh explicit Start may mint. */
   reset(): void;
   /** Tells the server the conversation for this identity actually began. */
-  markStarted(attemptId: string): void;
+  markStarted(attemptId: string): Promise<void>;
   /** Tells the server to release this identity without minting again. */
-  closeAttempt(attemptId: string): void;
+  closeAttempt(attemptId: string): Promise<void>;
 }
 
 export const BOOTSTRAP_URL = '/api/avatar/bootstrap';
@@ -96,24 +96,25 @@ export function createHttpTokenAdapter(transport: TokenTransport): HttpTokenAdap
       settled = null;
       pending = null;
     },
-    markStarted(attemptId: string): void {
-      notify(attemptId, 'started');
+    markStarted(attemptId: string): Promise<void> {
+      return notify(attemptId, 'started');
     },
-    closeAttempt(attemptId: string): void {
-      notify(attemptId, 'stop');
+    closeAttempt(attemptId: string): Promise<void> {
+      return notify(attemptId, 'stop');
     },
   };
 
   /**
    * Best-effort lifecycle note to the server. It carries the identity, never a
-   * token, and its failure must not change what the user sees; the mint guard
-   * stays authoritative either way.
+   * token, and always resolves: the caller may need to await it for ordering,
+   * while the mint guard stays authoritative even if the request fails.
    */
-  function notify(attemptId: string, action: 'started' | 'stop'): void {
-    transport
-      .post(LIFECYCLE_URL, { attemptId, action })
-      .catch(() => {
-        // Ignored deliberately: the identity is single-use regardless.
-      });
+  function notify(attemptId: string, action: 'started' | 'stop'): Promise<void> {
+    return Promise.resolve()
+      .then(() => transport.post(LIFECYCLE_URL, { attemptId, action }))
+      .then(
+        () => undefined,
+        () => undefined,
+      );
   }
 }

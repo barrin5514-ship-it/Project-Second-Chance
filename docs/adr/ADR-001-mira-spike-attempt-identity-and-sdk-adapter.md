@@ -73,12 +73,28 @@ The HTTP adapter has the matching epoch rule: `reset()` advances an epoch, and a
 
 At phone widths the primary Start/Stop control is a fixed bottom action bar so it remains visible before the long disclosure is scrolled; the disclosure stays in normal flow and is readable without starting a call.
 
+### D10 — Remote Mira audio/video is attached through the adapter, never faked
+
+The pinned SDK exposes `conversation.avatar.videoTrack` / `audioTrack` with `attach(element)` / `detach()`, and reports `tracks-changed` and `avatar-ready`. `ConversationLike` now carries an optional `avatar`, `sdk.ts` forwards the real participant, and `connection.ts` attaches the current tracks whenever they change or the page registers its elements. Track replacement detaches the old track first; Stop, SDK end, failure and unmount detach everything. `App.tsx` renders labelled `<video>` and `<audio>` elements only while connected, so no media element or capture exists before the explicit Start.
+
+The app still shows no simulated avatar: the elements exist only in the `ready` state produced by the SDK's `avatar-presented` event. This proves wiring, not provider playback; a live audiovisual smoke test remains owner-gated (see Verification status).
+
+**Alternative rejected:** attaching tracks inside `App.tsx` directly from the SDK. That would duplicate SDK-specific knowledge outside the replaceable adapter and make the media path untestable without the real SDK.
+
+### D11 — A new Start sequences after the previous Stop's server release
+
+`closeAttempt` now returns the lifecycle POST promise. The connection stores it as `releasePending`, and the next explicit `start()` awaits it before requesting a mint. This removes the race where the new mint reached the server before the Stop release, so the same-session guard correctly refused the old attempt and the user saw a failed Start immediately after a successful Stop.
+
+The client still resets its token cache immediately on Stop. If the release request fails, the promise settles and the Start falls through to the **unchanged** server guard: no new session is bootstrapped, the one-mint-per-Start rule is untouched, and the failure is reported rather than masked. Found by Codex's independent probe (held release, immediate restart).
+
 ## Verification status
 
-- Unit/integration: `npm test` → **11 files, 141 tests, exit 0**. `npm run typecheck` → exit 0. `npm run build` → exit 0 (817.60 kB bundle; informational warning only). `npm run verify:secrets` → exit 0; `npm run test:secrets` → 7 passed.
-- End-to-end through the **real** adapter, **real** connection wrapper and **real** Express app (only the provider HTTP call faked, synthetic credentials): 6 tests, including one-mint-per-Start, identity reuse, token-deadline behaviour, Stop→Start and stale-callback refusal.
-- Real-browser: `npm run test:e2e` → **26 passed, exit 0** on the pinned Chromium 131.0.6778.33 / build 1148, with provider access disabled (`PSC_E2E_NO_KEY=1`). Installing that browser required recovering the official completed artifacts after Playwright's installer stalled; this is recorded in `docs/evidence/V0-S1-builder.md`.
-- **Not verified:** a live Nuance conversation. No live browser call was attempted with real credentials; that remains an owner-observed step. No claim is made that a live Nuance call works.
+- Unit/integration: `npm test` → **12 files, 146 tests, exit 0**. `npm run typecheck` → exit 0. `npm run build` → exit 0 (819 kB bundle; informational warning only). `npm run verify:secrets` → exit 0; `npm run test:secrets` → 7 passed.
+- Codex's two independent acceptance probes, unchanged, now pass: `npx vitest run --config .setup/vitest.codex-review.config.ts` → 2 passed.
+- End-to-end through the **real** adapter, **real** connection wrapper and **real** Express app (only the provider HTTP call faked, synthetic credentials): 8 tests, including one-mint-per-Start, identity reuse, token-deadline behaviour, Stop→Start, delayed-release restart, failed-release rejection and stale-callback refusal.
+- Remote output: 3 real-App media tests cover attach/replacement/Stop, SDK end and unmount; no local camera and no media before Start.
+- Real-browser: `npm run test:e2e` → **26 passed, exit 0** on the pinned Chromium 131.0.6778.33 / build 1148, with provider access disabled (`PSC_E2E_NO_KEY=1`). Installing that browser required recovering the official completed artifacts after Playwright's installer stalled; this is recorded in `docs/evidence/V0-S1-builder.md`. The test timeout is 60 s to tolerate cold Vite compilation; assertions and retries are unchanged.
+- **Not verified:** a live Nuance conversation and actual provider playback/microphone permission. No live browser call was attempted with real credentials; that remains an owner-observed step. No claim is made that a live Nuance call works.
 
 
 ## Open items

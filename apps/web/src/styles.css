@@ -62,6 +62,21 @@ h2 {
   margin-top: 0.75rem;
 }
 
+.mira-video {
+  display: block;
+  width: 100%;
+  max-width: 32rem;
+  aspect-ratio: 4 / 3;
+  margin-top: 0.75rem;
+  border-radius: 0.5rem;
+  background: #10231f;
+}
+
+.conversation audio {
+  width: 100%;
+  margin-top: 0.5rem;
+}
+
 button {
   font: inherit;
   font-weight: 600;

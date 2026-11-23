@@ -27,6 +27,7 @@ function makeFakeConnection(initial: ConnectionState = 'idle') {
       return () => listeners.delete(listener);
     },
     lastTokenRequestAttemptId: null,
+    setMediaElements: vi.fn(),
   };
   return { connection, start, stop, setState };
 }
@@ -252,6 +253,7 @@ describe('Stop and the 60 second timer', () => {
         return () => listeners.delete(listener);
       },
       lastTokenRequestAttemptId: null,
+      setMediaElements: vi.fn(),
     };
     renderApp(connection);
 

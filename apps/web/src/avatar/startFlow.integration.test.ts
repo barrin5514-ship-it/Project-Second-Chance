@@ -220,4 +220,72 @@ describe('browser adapter to server, one mint per explicit Start', () => {
     expect(harness.providerCalls.count).toBe(2);
     expect(conn.lastTokenRequestAttemptId).not.toBe(firstId);
   });
+
+  it('waits for a delayed Stop release before minting the next Start', async () => {
+    const harness = buildServer();
+    const base = makeTransport(harness);
+    let releaseStop!: () => void;
+    const heldStop = new Promise<void>((resolve) => {
+      releaseStop = resolve;
+    });
+    const heldTransport: TokenTransport = {
+      get: (url) => base.get(url),
+      async post(url, body) {
+        if (url.endsWith('/attempt-lifecycle') && (body as { action?: string }).action === 'stop') {
+          await heldStop;
+        }
+        return base.post(url, body);
+      },
+    };
+    const tokens = createHttpTokenAdapter(heldTransport);
+    const conn = createAvatarConnection({
+      createConversation: fakeSdk({ count: 0, tokens: [] }),
+      tokens,
+    });
+
+    await conn.start();
+    conn.stop();
+
+    // Ordinary network latency on the release. A correct restart sequences
+    // against it; the user must not have to wait an interval or retry.
+    const releaseTimer = setTimeout(releaseStop, 75);
+    try {
+      await expect(conn.start()).resolves.toBeUndefined();
+      expect(harness.providerCalls.count).toBe(2);
+      expect(conn.lastTokenRequestAttemptId).not.toBeNull();
+    } finally {
+      clearTimeout(releaseTimer);
+      releaseStop();
+      conn.stop();
+    }
+  });
+
+  it('does not bypass the server guard when the Stop release request fails', async () => {
+    const harness = buildServer();
+    const base = makeTransport(harness);
+    const failingRelease: TokenTransport = {
+      get: (url) => base.get(url),
+      async post(url, body) {
+        if (url.endsWith('/attempt-lifecycle') && (body as { action?: string }).action === 'stop') {
+          throw new Error('release endpoint unavailable');
+        }
+        return base.post(url, body);
+      },
+    };
+    const tokens = createHttpTokenAdapter(failingRelease);
+    const conn = createAvatarConnection({
+      createConversation: fakeSdk({ count: 0, tokens: [] }),
+      tokens,
+    });
+
+    await conn.start();
+    conn.stop();
+
+    // The release failed, so the old attempt still holds the session. The new
+    // Start must fail honestly rather than mint around the guard or quietly
+    // bootstrap a different session.
+    await expect(conn.start()).rejects.toThrow();
+    expect(harness.providerCalls.count).toBe(1);
+    conn.stop();
+  });
 });

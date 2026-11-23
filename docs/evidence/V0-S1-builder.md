@@ -1,6 +1,6 @@
 # V0-S1 builder evidence — Mira local connection prototype
 
-Builder: DeepSeek. Status: **BUILDER IMPLEMENTATION COMPLETE — STOPPED FOR INDEPENDENT TESTING AND REVIEW.** This file records observed results only. Nothing here claims Codex independent acceptance testing, Claude review or owner merge approval. The real `.env` was not read, quoted, copied or logged at any point.
+Builder: DeepSeek. Status: **BUILDER FIXES COMPLETE — STOPPED FOR CODEX RETESTING.** This file records observed results only. Codex independent testing on 2026-11-23 returned **CHANGES REQUIRED**; the two blockers it raised are fixed and evidenced below. Nothing here claims Codex acceptance, Claude review or owner merge approval. The real `.env` was not read, quoted, copied or logged at any point.
 
 ## Identity and scope
 
@@ -52,6 +52,8 @@ Each row is a behaviour driven by a test that was observed failing before the mi
 | B9 A mint that resolves after the Start was closed must not be cached for a later Start (AC4, AC7) | FR-2; R05, R07 | `npx vitest run apps/web/src/avatar/tokenAdapter.test.ts` → 1 failed: `expected promise to reject, received {attemptId:"att_first", token:"st_test_first…"}`; no second mint for the new Start | `createHttpTokenAdapter` keeps an epoch; `reset()` bumps it; a mint completing under an old epoch is never cached, is reported superseded, and the consumed identity is released with a best-effort `stop` lifecycle note | `tokenAdapter.test.ts` → 2 passed (including caching/de-dup inside one open Start), exit 0; full suite 141 passed | Full-suite regression |
 | B10 Stopping during connecting must not raise a failure alert (AC5, AC7) | AC5/AC7; UX honesty | `npx vitest run apps/web/src/App.test.tsx` → 1 failed: `role="alert"` present with `That start did not work. You can try again.` after the user pressed Stop | `handleStart` ignores a rejection when the connection state is `stopped` | `App.test.tsx` → 26 passed, exit 0 | Full-suite regression |
 | B11 Real-browser request protection and phone-sized control visibility (AC1, AC2, AC6) | AC1/AC2/AC6; local token abuse, honesty | First real `npm run test:e2e`: **20 passed / 6 failed** (3 behaviours × 2 projects). `bootstrap … no permissive CORS` received `access-control-allow-origin: "*"` from the Vite dev server; preflight test same; at 375×667 the Start button was outside the viewport (`viewport ratio 0`) | `vite.config.ts`: `server.cors = false`; narrow-viewport CSS keeps the primary control as a fixed bottom action bar while the disclosure stays readable in flow | `npm run test:e2e` → **26 passed**, exit 0 (31.4 s) | Full E2E suite re-run after all later changes; still 26 passed |
+| B12 Remote Mira audio/video must reach page elements, follow `tracks-changed` and detach on Stop/end/unmount (AC6) | AC6; No False Hope (no text-only "connected" claim), media cleanup | Codex independent probe reproduced first: **1 test, 4 failing soft assertions** — no `video`, no `audio`, neither track's `attach` called. Maintained RED: `npx vitest run apps/web/src/avatar/mediaOutput.integration.test.tsx` → **1 failed**: `the page needs an output video element for Mira: expected null not to be null`, exit 1 | `ConversationLike` exposes the SDK's `avatar.videoTrack/audioTrack`; `sdk.ts` forwards them; `connection.ts` attaches on `tracks-changed`/`avatar-ready`/element registration, detaches on change and teardown; `App.tsx` renders labelled `<video>`/`<audio>` inside the connected surface and registers them only while `ready` | `mediaOutput.integration.test.tsx` → **3 passed** (one covers attach, track replacement and Stop; separate tests cover SDK end and unmount), exit 0; the unchanged Codex probe → **2 passed** | Full suite and E2E re-run; camera stays disabled and no media element exists before Start |
+| B13 A new Start must wait for the prior Stop's server release instead of racing the same-session guard (AC4, AC7) | AC4/AC7; R05 (credit), R07 (token abuse) | Codex independent probe reproduced: held Stop release → `connection.start()` rejected `Could not start the conversation.` Maintained RED: new `startFlow.integration.test.ts` case with a 75 ms-delayed release → same rejection, exit 1 | `HttpTokenAdapter.closeAttempt` now returns the lifecycle POST promise; `createAvatarConnection` tracks `releasePending` and awaits it before minting; failures fall through to the unchanged server guard (no bypass, no new session, no sleep in application code) | `startFlow.integration.test.ts` → **8 passed** (including delayed release and a failed-release regression that must still reject with only 1 provider call), exit 0; the unchanged Codex probe → **2 passed** | One-mint-per-Start, stale-callback and same-session guard tests all still pass |
 
 ### Test corrections (not counted as RED/GREEN behaviour evidence)
 
@@ -59,11 +61,23 @@ Each row is a behaviour driven by a test that was observed failing before the mi
 - **A vacuous "ignores caller-supplied persona" route test** asserted an always-empty local array. It now captures the provider request body and asserts fixed `persona_id: "mira"`, the fixed purpose prompt, and absence of the caller's `emma` / `give legal advice` strings. It passed on first run after the correction; not counted as new behaviour.
 - **Unused-symbol diagnostics** in `App.tsx` and `connection.test.ts` were removed (no behaviour change); see editor diagnostics below.
 
+## Codex independent-testing round — blockers fixed (2026-11-23)
+
+Codex reviewed commit `8b2fd40` and returned **CHANGES REQUIRED** (`docs/evidence/V0-S1-codex-independent-testing-2026-11-23.md`). Its fresh results were: `npm test` 140 passed / 1 failed (immediate Stop→Start); `npm run test:e2e` 25 passed / 1 timed out in `page.goto` (the isolated case passed; recorded as a reliability concern, not evidence that microphone capture occurred); both independent probes failed. I reproduced both probe failures exactly before changing code.
+
+- **P1 no output media (AC6).** Fixed behind the replaceable adapter: `ConversationLike` now exposes the pinned SDK's `avatar.videoTrack/audioTrack`; `sdk.ts` forwards them; `connection.ts` attaches on `tracks-changed`/`avatar-ready` and whenever the page registers elements, detaches on track replacement, Stop, SDK end, failure and unmount; `App.tsx` renders labelled `<video>`/`<audio>` only in the connected state. Behaviour tests: `mediaOutput.integration.test.tsx` (3 tests: attach + replacement + Stop; SDK end; unmount). Camera stays off in both layers, and no media element exists before Start.
+- **P1 Stop/reset ordering (AC4/AC7).** `closeAttempt` now returns the lifecycle POST promise; the connection stores it as `releasePending`, and the next `start()` awaits it before minting, then still lets the unchanged server guard decide. No sleep in application code, no new session, no loosened guard and no masked rejection. Behaviour tests: a deterministic delayed-release restart (observed RED before the fix) and a failed-release regression (must reject with only one provider call).
+- **E2E reliability only.** The independent `page.goto` timeout is treated as harness reliability, not capture evidence: `playwright.config.ts` test timeout raised from 30 s to 60 s with no assertion, retry, guard or timeout-masking change. The full suite passes 26/26.
+- **History limitation retained.** Codex did not witness B1–B7, and some of those rows include module-absence/import/test-correction failures that are not qualifying behaviour RED under AGENTS.md. I have not retroactively upgraded them; B12–B13 are this round's observed RED/GREEN.
+
 ## Verification — actual commands and results (2026-11-23)
 
 ```
 npm test
-exit 0 — 11 test files, 141 tests passed
+exit 0 — 12 test files, 146 tests passed
+
+npx vitest run --config .setup/vitest.codex-review.config.ts
+exit 0 — the two unchanged Codex independent probes passed
 
 npm run typecheck
 exit 0 — no diagnostics (tsc 5.7.2, root tsconfig)
@@ -72,11 +86,11 @@ npx tsc --noEmit -p tsconfig.json --noUnusedLocals --noUnusedParameters
 exit 0 — no unused-symbol diagnostics
 
 npm run build
-exit 0 — vite 6.0.3, built in 3.17 s; bundle 817.60 kB (226.76 kB gzip).
+exit 0 — vite 6.0.3, built in 2.23 s; bundle 819 kB (800 KiB).
         The >500 kB chunk warning is informational (the pinned SDK bundle)
 
 npm run test:e2e
-exit 0 — 26 passed (29-31 s) on the pinned Chromium 131.0.6778.33 / build 1148,
+exit 0 — 26 passed (24.3 s) on the pinned Chromium 131.0.6778.33 / build 1148,
         projects chromium and chromium-narrow. Provider access disabled by
         PSC_E2E_NO_KEY=1; the API logs "No usable NUANCE_API_KEY. Start will answer 503."
 
@@ -108,7 +122,8 @@ Playwright 1.49.1 pins Chromium build 1148 (131.0.6778.33). It was absent at ses
 ## Remaining blockers / limitations (must not be read as passing tests)
 
 - **Live Nuance conversation is not verified.** No live browser conversation has been run by the builder; a live smoke test needs real credentials and the owner's explicit go-ahead, and must be recorded separately with what the owner observed. The automated suites never contact the provider.
-- **Independent testing and review have not happened.** Codex must run its independent tests; Claude review must occur; the owner approves merge. This report does not replace them.
+- **Independent testing and review.** Codex independent testing has occurred once and returned CHANGES REQUIRED; these fixes are stopped for a fresh Codex verification. Claude review has not occurred; the owner has not approved merge. This report does not replace those gates.
+- **The live audiovisual exchange is still unverified.** B12 proves the page wires remote tracks into labelled media elements; it does not prove actual provider playback in a browser, microphone permission denial, live capacity behaviour or a completed conversation. Those need the owner-authorized live smoke test.
 - **No rate limiting / single local session.** The `attemptId`/CSRF design is a bounded local prototype control, not a multi-user or hosted defence. Lifecycle `started`/`stop` reports are authenticated only by session cookie + CSRF and affect only that session; revisit before shared/hosted use (ADR-001 D5).
 - **Browser timer is courtesy only.** The visible 60 s timer starts when connecting begins and calls Stop; the provider-enforced `maxSessionSeconds` is the conversation cap. A user who spends >60 s at the permission prompt is stopped early and can Start again.
 - **SDK event names** (`avatar-presented`, `session-ended`) are pinned to `0.40.0` in `sdk.ts`; re-check before any SDK upgrade.
@@ -121,4 +136,4 @@ Playwright 1.49.1 pins Chromium build 1148 (131.0.6778.33). It was absent at ses
 
 ## Stop point
 
-Implementation and local verification for the approved V0-S1 scope are complete. No merge, push, deployment, form, legal-record or broader capstone work was performed. Stopping for actual Codex independent testing, Claude review and owner merge approval.
+The two Codex-independent-testing blockers are fixed with observed RED→GREEN tests, the two unchanged independent probes now pass, and local verification is green. No merge, push, deployment, form, legal-record or broader capstone work was performed. Stopping for a fresh Codex independent verification, then Claude review and owner merge approval.

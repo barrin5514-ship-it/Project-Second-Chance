@@ -40,18 +40,45 @@ export function classifyMediaError(error: { device: string; reason: string }): M
   }
 }
 
+/** A remote persona video track, as exposed by the pinned SDK. */
+export interface VideoTrackLike {
+  attach(element: HTMLVideoElement): void;
+  detach(): void;
+}
+
+/** A remote persona audio track, as exposed by the pinned SDK. */
+export interface AudioTrackLike {
+  attach(element: HTMLAudioElement): void;
+  detach(): void;
+}
+
+/** The persona's remote output tracks, when the SDK exposes them. */
+export interface AvatarMediaLike {
+  readonly videoTrack: VideoTrackLike | null;
+  readonly audioTrack: AudioTrackLike | null;
+}
+
 /** The subset of the pinned SDK conversation this wrapper relies on. */
 export interface ConversationLike {
   /**
    * Subscribes to lifecycle events. These are the `onChange` event names of
-   * `@nuancelabs/js-sdk@0.40.0` (`'avatar-presented'`, `'session-ended'`).
+   * `@nuancelabs/js-sdk@0.40.0` (`'avatar-presented'`, `'session-ended'`,
+   * `'tracks-changed'`, …).
    */
   on(event: string, handler: (...args: unknown[]) => void): () => void;
   connect(): Promise<void>;
   disconnect(): Promise<void> | void;
+  /** The remote Mira participant; absent only in older test doubles. */
+  readonly avatar?: AvatarMediaLike;
 }
 
 export type CreateConversationFn = (options: Record<string, unknown>) => ConversationLike;
+
+/** Page elements the remote tracks are attached to. */
+export interface MediaElements {
+  video: HTMLVideoElement | null;
+  audio: HTMLAudioElement | null;
+}
 
 /**
  * Mints one token per explicit Start. `attemptId` is the server-issued
@@ -62,9 +89,13 @@ export interface TokenProvider {
   /** Closes this Start's lifecycle so a new explicit Start may mint again. */
   reset(): void;
   /** Reports that the conversation for this identity really began. */
-  markStarted?(attemptId: string): void;
-  /** Releases this identity on the server without minting again. */
-  closeAttempt?(attemptId: string): void;
+  markStarted?(attemptId: string): Promise<void> | void;
+  /**
+   * Releases this identity on the server without minting again. The returned
+   * promise lets the next Start sequence after the release has reached the
+   * server.
+   */
+  closeAttempt?(attemptId: string): Promise<void> | void;
 }
 
 export interface AvatarConnection {
@@ -72,6 +103,11 @@ export interface AvatarConnection {
   stop(): void;
   getState(): ConnectionState;
   subscribe(listener: (state: ConnectionState) => void): () => void;
+  /**
+   * Registers the page's output elements. Available remote tracks are attached
+   * now, and later `tracks-changed` events re-attach; null detaches.
+   */
+  setMediaElements(elements: MediaElements): void;
   /** Exposed so tests and the UI can assert the identity was reused. */
   readonly lastTokenRequestAttemptId: string | null;
 }
@@ -100,6 +136,11 @@ export function createAvatarConnection(options: {
   let unsubscribers: Array<() => void> = [];
   let minted: { token: string; attemptId: string } | null = null;
   let pendingTokenRequest: Promise<string> | null = null;
+  /** Server release started by the most recent Stop; the next Start awaits it. */
+  let releasePending: Promise<void> | null = null;
+  let mediaElements: MediaElements = { video: null, audio: null };
+  let attachedVideo: VideoTrackLike | null = null;
+  let attachedAudio: AudioTrackLike | null = null;
   const listeners = new Set<(state: ConnectionState) => void>();
 
   function setState(next: ConnectionState): void {
@@ -107,14 +148,90 @@ export function createAvatarConnection(options: {
     for (const listener of listeners) listener(next);
   }
 
+  /** Detaches any remote output currently playing into the page. */
+  function detachMedia(): void {
+    if (attachedVideo !== null) {
+      try {
+        attachedVideo.detach();
+      } catch {
+        // A failed detach must not mask cleanup of the rest.
+      }
+      attachedVideo = null;
+    }
+    if (attachedAudio !== null) {
+      try {
+        attachedAudio.detach();
+      } catch {
+        // Same.
+      }
+      attachedAudio = null;
+    }
+  }
+
+  /**
+   * Attaches the avatar's current remote tracks to whichever page elements are
+   * registered. Safe to call before the elements exist: the tracks are read
+   * again when the page registers them or the SDK reports a change.
+   */
+  function syncMedia(): void {
+    const avatar = conversation?.avatar;
+    const videoTrack = avatar?.videoTrack ?? null;
+    const audioTrack = avatar?.audioTrack ?? null;
+
+    if (attachedVideo !== null && attachedVideo !== videoTrack) {
+      try {
+        attachedVideo.detach();
+      } catch {
+        // Continue with the new track.
+      }
+      attachedVideo = null;
+    }
+    if (attachedAudio !== null && attachedAudio !== audioTrack) {
+      try {
+        attachedAudio.detach();
+      } catch {
+        // Continue with the new track.
+      }
+      attachedAudio = null;
+    }
+
+    if (videoTrack !== null && mediaElements.video !== null && attachedVideo === null) {
+      try {
+        videoTrack.attach(mediaElements.video);
+        attachedVideo = videoTrack;
+      } catch {
+        attachedVideo = null;
+      }
+    }
+    if (audioTrack !== null && mediaElements.audio !== null && attachedAudio === null) {
+      try {
+        audioTrack.attach(mediaElements.audio);
+        attachedAudio = audioTrack;
+      } catch {
+        attachedAudio = null;
+      }
+    }
+  }
+
+  /** Registers the page's output elements; null detaches. */
+  function setMediaElements(elements: MediaElements): void {
+    const changed =
+      elements.video !== mediaElements.video || elements.audio !== mediaElements.audio;
+    mediaElements = elements;
+    if (changed) detachMedia();
+    syncMedia();
+  }
+
   function teardown(): void {
     for (const off of unsubscribers) off();
     unsubscribers = [];
+    detachMedia();
+    mediaElements = { video: null, audio: null };
     const current = conversation;
     conversation = null;
     if (current !== null) {
       try {
-        void current.disconnect();
+        void Promise.resolve(current.disconnect()).catch(() => undefined);
       } catch {
         // A disconnect failure must not mask the state being reported.
       }
@@ -128,7 +245,17 @@ export function createAvatarConnection(options: {
     generation += 1;
     teardown();
     // Release the identity on the server, but only if a mint ever happened.
-    if (attemptId !== null) options.tokens.closeAttempt?.(attemptId);
+    // The next Start awaits `releasePending`, so it cannot race the release.
+    const closingId = attemptId;
+    attemptId = null;
+    if (closingId !== null && options.tokens.closeAttempt !== undefined) {
+      try {
+        const released = options.tokens.closeAttempt(closingId);
+        releasePending = Promise.resolve(released).catch(() => undefined);
+      } catch {
+        // A refused release is left to the server's same-session guard.
+      }
+    }
     minted = null;
     pendingTokenRequest = null;
     options.tokens.reset();
@@ -145,6 +272,18 @@ export function createAvatarConnection(options: {
     pendingTokenRequest = null;
     attemptId = null;
     setState('connecting');
+
+    // A previous Stop releases its server attempt asynchronously. Mint only
+    // after that release has reached the server, so the same-session guard
+    // cannot see the old attempt and refuse this legitimate new Start.
+    if (releasePending !== null) {
+      try {
+        await releasePending;
+      } catch {
+        // Fall through to the server's own guard; never silently bypass it.
+      }
+    }
+    if (generation !== myGeneration) throw new Error('Start cancelled.');
 
     const tokenFn = async (): Promise<string> => {
       // A token callback belongs to exactly one Start. Stop, a failed connect,
@@ -207,6 +346,19 @@ export function createAvatarConnection(options: {
           setState('ended');
         }),
       ),
+      // Remote tracks may arrive after connect, or be replaced mid-call.
+      created.on(
+        'tracks-changed',
+        guard(() => {
+          syncMedia();
+        }),
+      ),
+      created.on(
+        'avatar-ready',
+        guard(() => {
+          syncMedia();
+        }),
+      ),
     );
 
     try {
@@ -224,6 +376,9 @@ export function createAvatarConnection(options: {
     if (generation === myGeneration && attemptId !== null) {
       options.tokens.markStarted?.(attemptId);
     }
+    // Pick up tracks already present without a change event (the page may not
+    // have registered its elements yet; that path calls syncMedia again).
+    if (generation === myGeneration) syncMedia();
   }
 
   function stop(): void {
@@ -242,6 +397,7 @@ export function createAvatarConnection(options: {
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
+    setMediaElements,
     get lastTokenRequestAttemptId() {
       return attemptId;
     },

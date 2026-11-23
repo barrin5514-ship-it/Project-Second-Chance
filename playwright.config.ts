@@ -7,7 +7,11 @@ export default defineConfig({
   retries: 0,
   workers: 1,
   reporter: [['list']],
-  timeout: 30_000,
+  // Cold Vite dev-server transforms of the SDK bundle can be slower than a
+  // normal page load on a busy machine. This only allows the same assertions
+  // more time; it does not retry or weaken them. Codex's independent run saw
+  // one page.goto timeout while the isolated case passed.
+  timeout: 60_000,
   expect: { timeout: 5_000 },
   use: {
     baseURL: 'http://127.0.0.1:5173',

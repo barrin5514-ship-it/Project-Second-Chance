@@ -138,8 +138,18 @@ export default function App({
   const [secondsLeft, setSecondsLeft] = useState(MAX_SESSION_SECONDS);
   const [error, setError] = useState<string | null>(null);
   const startRef = useRef<HTMLButtonElement | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => connection.subscribe(setState), [connection]);
+
+  // The media surface exists only while connected. Register it so the remote
+  // tracks can attach, and detach them when it unmounts.
+  useEffect(() => {
+    if (state !== 'ready') return;
+    connection.setMediaElements({ video: videoRef.current, audio: audioRef.current });
+    return () => connection.setMediaElements({ video: null, audio: null });
+  }, [state, connection]);
 
   const handleStart = useCallback(async () => {
     setError(null);
@@ -246,6 +256,16 @@ export default function App({
             <p>
               <strong>Mira (AI)</strong> is connected. Speak clearly and briefly.
             </p>
+            {/* Remote output only. The camera is disabled in both layers, and
+                no media element exists before the user starts. */}
+            <video
+              ref={videoRef}
+              className="mira-video"
+              autoPlay
+              playsInline
+              aria-label="Mira, an AI, on video"
+            />
+            <audio ref={audioRef} autoPlay aria-label="Mira&rsquo;s voice" />
           </div>
         ) : null}
 

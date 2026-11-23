@@ -13,6 +13,17 @@ export interface SdkConversation {
   onChange(handler: (event: SdkConversationEvent) => void): () => void;
   connect(): Promise<void>;
   disconnect(): Promise<void>;
+  /** The remote Mira participant, when the pinned SDK exposes it. */
+  readonly avatar?: {
+    readonly videoTrack: {
+      attach(element: HTMLVideoElement): void;
+      detach(): void;
+    } | null;
+    readonly audioTrack: {
+      attach(element: HTMLAudioElement): void;
+      detach(): void;
+    } | null;
+  };
 }
 
 /** `createNuanceConversation` from `@nuancelabs/js-sdk`, as a value to inject. */
@@ -91,5 +102,8 @@ function wrapConversation(conversation: SdkConversation): ConversationLike {
     },
     connect: () => conversation.connect(),
     disconnect: () => conversation.disconnect(),
+    // Forward the SDK's remote participant so the wrapper can attach its
+    // audio/video to the page. Optional: lifecycle-only test doubles omit it.
+    ...(conversation.avatar !== undefined ? { avatar: conversation.avatar } : {}),
   };
 }
