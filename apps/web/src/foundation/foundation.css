@@ -1,0 +1,104 @@
+.foundation-page {
+  box-sizing: border-box;
+  max-width: 46rem;
+  margin: 0 auto;
+  padding: 1.5rem 1rem 3rem;
+  overflow-wrap: break-word;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  line-height: 1.55;
+  color: #10231f;
+  background: #f7faf8;
+}
+
+.foundation-page h1 {
+  font-size: 1.75rem;
+  line-height: 1.2;
+  margin: 0.35rem 0 0.5rem;
+}
+
+.foundation-page h2 {
+  font-size: 1.1rem;
+  margin: 0 0 0.5rem;
+}
+
+.foundation-banner {
+  display: inline-block;
+  margin: 0;
+  padding: 0.3rem 0.6rem;
+  border-radius: 0.35rem;
+  background: #fff3cd;
+  border: 1px solid #d9b44a;
+  color: #4a3a00;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.foundation-subtitle {
+  margin: 0 0 1.25rem;
+  font-weight: 600;
+  color: #29443d;
+}
+
+.foundation-panel {
+  background: #fff;
+  border: 1px solid #cfe0d9;
+  border-radius: 0.6rem;
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+.foundation-status {
+  margin: 0;
+  padding: 0.6rem 0.75rem;
+  background: #eef6f2;
+  border-left: 4px solid #2f7d63;
+  border-radius: 0.25rem;
+}
+
+.foundation-retry {
+  margin-top: 0.75rem;
+  font: inherit;
+  font-weight: 600;
+  padding: 0.7rem 1.1rem;
+  border-radius: 0.4rem;
+  border: 1px solid #266b56;
+  background: #2f7d63;
+  color: #fff;
+  cursor: pointer;
+}
+
+.foundation-retry:hover {
+  background: #266b56;
+}
+
+.foundation-retry:focus-visible,
+.foundation-page a:focus-visible {
+  outline: 3px solid #17618c;
+  outline-offset: 2px;
+}
+
+.foundation-page a {
+  color: #1d5c8a;
+}
+
+.foundation-footer {
+  border-top: 1px solid #cfe0d9;
+  padding-top: 0.75rem;
+  font-size: 0.9rem;
+  color: #40584f;
+}
+
+@media (max-width: 420px) {
+  .foundation-page {
+    padding: 1rem 0.75rem 2rem;
+  }
+
+  .foundation-page h1 {
+    font-size: 1.45rem;
+  }
+
+  .foundation-retry {
+    width: 100%;
+    padding: 0.85rem 1rem;
+  }
+}

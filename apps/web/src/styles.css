@@ -1,0 +1,145 @@
+body {
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  line-height: 1.55;
+  color: #10231f;
+  background: #f7faf8;
+  margin: 0;
+}
+
+.page {
+  max-width: 46rem;
+  margin: 0 auto;
+  padding: 1.5rem 1rem 3rem;
+}
+
+h1 {
+  font-size: 1.5rem;
+  line-height: 1.25;
+  margin: 0 0 0.5rem;
+}
+
+h2 {
+  font-size: 1.1rem;
+  margin: 0 0 0.5rem;
+}
+
+.tagline {
+  font-size: 1rem;
+  margin: 0 0 1.25rem;
+  color: #29443d;
+}
+
+.panel {
+  background: #fff;
+  border: 1px solid #cfe0d9;
+  border-radius: 0.6rem;
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+.status {
+  font-size: 1.05rem;
+  margin: 0 0 0.75rem;
+  padding: 0.6rem 0.75rem;
+  background: #eef6f2;
+  border-left: 4px solid #2f7d63;
+  border-radius: 0.25rem;
+}
+
+.status-label {
+  font-weight: 700;
+}
+
+.error {
+  color: #8a1c1c;
+  background: #fdeeee;
+  border-left: 4px solid #b33;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.25rem;
+}
+
+.controls {
+  margin-top: 0.75rem;
+}
+
+.mira-video {
+  display: block;
+  width: 100%;
+  max-width: 32rem;
+  aspect-ratio: 4 / 3;
+  margin-top: 0.75rem;
+  border-radius: 0.5rem;
+  background: #10231f;
+}
+
+.conversation audio {
+  width: 100%;
+  margin-top: 0.5rem;
+}
+
+button {
+  font: inherit;
+  font-weight: 600;
+  padding: 0.65rem 1.15rem;
+  border-radius: 0.4rem;
+  border: 1px solid #266b56;
+  background: #2f7d63;
+  color: #fff;
+  cursor: pointer;
+}
+
+button:hover {
+  background: #266b56;
+}
+
+button:focus-visible,
+a:focus-visible {
+  outline: 3px solid #17618c;
+  outline-offset: 2px;
+}
+
+a {
+  color: #1d5c8a;
+}
+
+footer {
+  font-size: 0.9rem;
+  color: #40584f;
+  border-top: 1px solid #cfe0d9;
+  padding-top: 0.75rem;
+}
+
+/* Narrow phone viewports: single column, comfortable targets. */
+@media (max-width: 420px) {
+  .page {
+    padding: 1rem 0.75rem 2rem;
+  }
+
+  h1 {
+    font-size: 1.25rem;
+  }
+
+  /* The disclosure is long on a phone. Keep the primary action reachable
+     without reading/scrolling first, while the full disclosure stays in flow
+     above it. */
+  .controls {
+    position: fixed;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 10;
+    margin: 0;
+    padding: 0.75rem 0.75rem calc(0.75rem + env(safe-area-inset-bottom));
+    background: #f7faf8;
+    border-top: 1px solid #cfe0d9;
+  }
+
+  body {
+    padding-bottom: 5.5rem;
+  }
+
+  button {
+    width: 100%;
+    padding: 0.85rem 1rem;
+  }
+}
