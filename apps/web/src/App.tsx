@@ -198,6 +198,9 @@ export default function App({
   return (
     <main className="page">
       <header>
+        <p>
+          <a href="/">&larr; Back to the foundation page</a>
+        </p>
         <h1>Project Second Chance — Mira connection prototype</h1>
         <p className="tagline">
           An AI connection prototype. Mira is an AI, not a person. This prototype gives no legal

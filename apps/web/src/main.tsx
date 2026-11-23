@@ -1,20 +1,45 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { createNuanceConversation } from '@nuancelabs/js-sdk';
-import App from './App';
-import { registerNuanceSdk, type NuanceFactory } from './avatar/sdk';
+import FoundationLanding from './foundation/FoundationLanding';
 import './styles.css';
-
-// The page's only SDK source. Registering the pinned factory here (rather than
-// importing the SDK inside App) keeps App testable without the SDK and means
-// nothing resolves the SDK until the user presses Start.
-registerNuanceSdk(createNuanceConversation as unknown as NuanceFactory);
 
 const container = document.getElementById('root');
 if (container === null) throw new Error('Missing #root');
 
-createRoot(container).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-);
+const root = createRoot(container);
+const path = window.location.pathname.replace(/\/+$/, '');
+
+if (path === '/mira') {
+  // The separately approved Mira connection test is opt-in: load its page and
+  // the provider SDK only here, never on the foundation landing.
+  void Promise.all([import('./App'), import('./avatar/sdk'), import('@nuancelabs/js-sdk')])
+    .then(([appModule, sdkModule, nuanceModule]) => {
+      sdkModule.registerNuanceSdk(
+        nuanceModule.createNuanceConversation as unknown as import('./avatar/sdk').NuanceFactory,
+      );
+      root.render(
+        <StrictMode>
+          <appModule.default />
+        </StrictMode>,
+      );
+    })
+    .catch(() => {
+      root.render(
+        <StrictMode>
+          <main className="foundation-page">
+            <h1>Mira connection test unavailable</h1>
+            <p role="alert">The optional Mira connection test could not be loaded.</p>
+            <p>
+              <a href="/">Back to the foundation page</a>
+            </p>
+          </main>
+        </StrictMode>,
+      );
+    });
+} else {
+  root.render(
+    <StrictMode>
+      <FoundationLanding />
+    </StrictMode>,
+  );
+}

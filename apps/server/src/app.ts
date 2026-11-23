@@ -1,6 +1,7 @@
 import express, { type Express, type Request, type Response } from 'express';
 import cookieParser from 'cookie-parser';
 import { AttemptRegistry, type Clock } from './avatar/attemptRegistry';
+import { mountHealthRoute } from './health/health.routes';
 import { mintSessionToken, type FetchLike } from './avatar/nuanceGateway';
 import {
   CSRF_HEADER,
@@ -52,6 +53,9 @@ export function createApp(deps: AppDependencies): Express {
   app.use(cookieParser());
   app.use(express.json({ limit: '1kb' }));
   // No CORS middleware: cross-origin use is not supported or permitted.
+
+  // Foundation contract: exact body, no configuration or provider access.
+  mountHealthRoute(app);
 
   app.get('/api/avatar/bootstrap', (req: Request, res: Response) => {
     const host = req.headers.host;
@@ -190,6 +194,12 @@ export function createApp(deps: AppDependencies): Express {
       deps.registry.close(attemptId, sessionId, 'stopped');
     }
     res.status(204).end();
+  });
+
+  // Generic JSON 404: the Express default is HTML and echoes the request path.
+  app.use((_req: Request, res: Response) => {
+    res.setHeader('Cache-Control', 'no-store');
+    res.status(404).json({ error: 'not-found' });
   });
 
   return app;

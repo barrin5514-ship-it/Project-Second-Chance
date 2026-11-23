@@ -42,3 +42,7 @@ Authority: `docs/product/approved-product-baseline-v1.1.md` section 8, `docs/pro
 ## Updating the register
 
 At every story start, select applicable IDs and required tests; do not reopen settled architecture without a concrete conflict. At story end, link actual evidence and residual exposure, with status and date. DeepSeek can mark AWAITING INDEPENDENT VERIFICATION, not self-certify independent mitigation. Codex and Claude report their actual checks; the owner accepts residual nonblocking risk explicitly. A failure on a required safety gate blocks the affected capability and merge; a future risk not activated in the current story stays OPEN rather than blocking unrelated foundation work.
+
+## E0-S1 evidence update — 2026-11-23
+
+Builder evidence: `docs/evidence/E0-S1-builder.md` (branch `feature/e0-s1-foundation`, unmerged). No risk is closed. Within the local foundation scope: R07/R09/R10/R20/R23/R24 are **AWAITING INDEPENDENT VERIFICATION** (builder tests only); R06 remains **IN PROGRESS** (later workflows not built); R05/R19/R25 remain **OPEN** for future private-storage/recovery work; R08/R21 remain a local fictional-demo boundary and **OPEN for real/hosted use**. Independent Codex testing and actual Claude review have not occurred for this foundation.

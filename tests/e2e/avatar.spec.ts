@@ -14,7 +14,7 @@ async function bootstrap(page: Page): Promise<{ csrfToken: string }> {
 
 test.describe('disclosure and no media before Start', () => {
   test('page states what it is and gives no legal advice', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/mira');
     await expect(page.getByRole('heading', { level: 1 })).toContainText(/Project Second Chance/i);
     await expect(page.getByRole('main')).toContainText(/no legal advice/i);
     await expect(page.getByRole('main')).toContainText(/Mira is an AI, not a person/i);
@@ -34,7 +34,7 @@ test.describe('disclosure and no media before Start', () => {
       }
     });
 
-    await page.goto('/');
+    await page.goto('/mira');
     await expect(page.getByRole('status')).toBeVisible();
     getUserMediaCalls = await page.evaluate(
       () => (window as unknown as { __gum: number }).__gum,
@@ -44,7 +44,7 @@ test.describe('disclosure and no media before Start', () => {
   });
 
   test('links provider terms and the privacy/recording policy', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/mira');
     await expect(page.getByRole('link', { name: /terms/i })).toHaveAttribute(
       'href',
       'https://app.nuancelabs.ai/terms',
@@ -125,7 +125,7 @@ test.describe('request protection', () => {
 
 test.describe('failure state is honest, not a fake success', () => {
   test('Start without a key shows an unavailable state and no avatar', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/mira');
     await page.getByRole('button', { name: /start/i }).click();
 
     const status = page.getByRole('status');
@@ -135,7 +135,7 @@ test.describe('failure state is honest, not a fake success', () => {
   });
 
   test('offers a retry after the failure and stays keyboard operable', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/mira');
     const start = page.getByRole('button', { name: /start/i });
     start.focus();
     await expect(start).toBeFocused();
@@ -150,7 +150,7 @@ test.describe('failure state is honest, not a fake success', () => {
 test.describe('narrow viewport', () => {
   test('controls remain visible and operable on a phone-sized screen', async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 667 });
-    await page.goto('/');
+    await page.goto('/mira');
 
     const start = page.getByRole('button', { name: /start/i });
     await expect(start).toBeInViewport();
