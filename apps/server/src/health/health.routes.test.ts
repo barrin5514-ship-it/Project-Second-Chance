@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../app';
 import { AttemptRegistry } from '../avatar/attemptRegistry';
@@ -6,7 +6,11 @@ import type { FetchLike } from '../avatar/nuanceGateway';
 
 const FAKE_KEY = 'nk_test_000000000000000000000000';
 
-function makeApp(): { app: ReturnType<typeof createApp>; providerCalls: () => number } {
+function makeApp(): {
+  app: ReturnType<typeof createApp>;
+  providerCalls: () => number;
+  readApiKey: ReturnType<typeof vi.fn>;
+} {
   let calls = 0;
   const fetchImpl = (async () => {
     calls += 1;
@@ -15,15 +19,16 @@ function makeApp(): { app: ReturnType<typeof createApp>; providerCalls: () => nu
       headers: { 'content-type': 'application/json' },
     });
   }) as unknown as FetchLike;
+  const readApiKey = vi.fn(() => FAKE_KEY);
   const clock = { now: () => Date.now() };
   const app = createApp({
     hasApiKey: true,
-    readApiKey: () => FAKE_KEY,
+    readApiKey,
     fetchImpl,
     registry: new AttemptRegistry({ clock, tokenTtlMs: 60_000 }),
     clock,
   });
-  return { app, providerCalls: () => calls };
+  return { app, providerCalls: () => calls, readApiKey };
 }
 
 describe('GET /api/health', () => {
@@ -56,4 +61,46 @@ describe('GET /api/health', () => {
     expect(res.text).not.toContain(process.cwd());
     expect(res.text).not.toContain('Cannot GET');
   });
+});
+
+describe('JSON parser and framework failures', () => {
+  it.each([
+    {
+      kind: 'malformed',
+      path: '/api/health',
+      method: 'get' as const,
+      body: '{"synthetic-canary":"request-text-only"',
+      status: 400,
+      error: 'bad-request',
+    },
+    {
+      kind: 'oversized',
+      path: '/api/unknown-route',
+      method: 'post' as const,
+      body: JSON.stringify({ payload: 'x'.repeat(2048) }),
+      status: 413,
+      error: 'payload-too-large',
+    },
+  ])(
+    'keeps a $kind JSON body as a generic JSON error without stack paths or request text',
+    async ({ path, method, body, status, error }) => {
+      const { app, providerCalls, readApiKey } = makeApp();
+      const agent = method === 'get' ? request(app).get(path) : request(app).post(path);
+      const res = await agent.set('Content-Type', 'application/json').send(body);
+
+      expect(res.status).toBe(status);
+      expect(res.headers['content-type']).toMatch(/application\/json/);
+      expect(res.body).toEqual({ error });
+      // The default Express/body-parser handler is HTML and includes a
+      // SyntaxError stack with absolute local paths. None of that may escape.
+      expect(res.text).not.toMatch(
+        /SyntaxError|node_modules|request-text-only|synthetic-canary|payload-too-large canary/i,
+      );
+      expect(res.text).not.toContain(process.cwd());
+      expect(res.text).not.toContain('at ');
+      // Parsing must fail before configuration or provider access.
+      expect(readApiKey).not.toHaveBeenCalled();
+      expect(providerCalls()).toBe(0);
+    },
+  );
 });

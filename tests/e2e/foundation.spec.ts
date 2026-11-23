@@ -26,19 +26,26 @@ test.describe('foundation landing', () => {
     await expect(page.getByRole('link', { name: /mira/i })).toHaveAttribute('href', '/mira');
   });
 
-  test('reports the health contract and makes only same-origin requests', async ({ page }) => {
+  test('reports the health contract and makes only foundation API requests', async ({ page }) => {
     const external: string[] = [];
+    const apiPaths: string[] = [];
     page.on('request', (request) => {
       const url = request.url();
       if (url.startsWith('http') && !url.startsWith(BASE)) external.push(url);
+      const path = new URL(url).pathname;
+      if (path.startsWith('/api/')) apiPaths.push(path);
     });
 
     await page.goto('/');
 
     await expect(page.getByRole('status')).toContainText(/local api is available/i);
     await expect(page.getByRole('status')).toContainText(/fictional-demo/i);
-    // The foundation flow must never contact an AI provider or court source.
+    // The foundation flow must never contact an AI provider, court source or
+    // the optional Mira avatar API; only the health contract is allowed.
     expect(external).toEqual([]);
+    expect(apiPaths.length).toBeGreaterThan(0);
+    expect(apiPaths.every((path) => path === '/api/health')).toBe(true);
+    expect(apiPaths.some((path) => /avatar|nuance/i.test(path))).toBe(false);
   });
 
   test('shows an actionable keyboard retry after API failure and recovers', async ({ page }) => {

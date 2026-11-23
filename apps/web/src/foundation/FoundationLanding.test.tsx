@@ -1,10 +1,15 @@
-import { describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import FoundationLanding from './FoundationLanding';
 import type { HealthResponse } from '../api/health';
 
 const HEALTHY: HealthResponse = { status: 'ok', mode: 'fictional-demo' };
+
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+});
 
 function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void; reject: (e: Error) => void } {
   let resolve!: (value: T) => void;
@@ -104,5 +109,32 @@ describe('foundation landing', () => {
     await waitFor(() =>
       expect(screen.getByRole('status')).toHaveTextContent(/local api is available/i),
     );
+  });
+
+  it('offers Retry when the production health request never settles', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
+        return new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener(
+            'abort',
+            () => reject(Object.assign(new Error('synthetic abort'), { name: 'AbortError' })),
+            { once: true },
+          );
+        });
+      }),
+    );
+
+    render(<FoundationLanding />);
+    expect(screen.getByRole('status')).toHaveTextContent(/checking the local api/i);
+
+    // No injected loader: this exercises the production fetchHealth timeout.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15_000);
+    });
+
+    expect(screen.getByRole('status')).toHaveTextContent(/local api is unavailable/i);
+    expect(screen.getByRole('button', { name: /retry/i })).toBeEnabled();
   });
 });

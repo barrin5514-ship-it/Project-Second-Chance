@@ -15,6 +15,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 
@@ -30,6 +31,7 @@ describe('fetchHealth', () => {
     expect(url).toBe('/api/health');
     expect(init.credentials).toBe('same-origin');
     expect(init.cache).toBe('no-store');
+    expect(init.signal).toBeInstanceOf(AbortSignal);
   });
 
   it('rejects a non-200 response without claiming the API is ready', async () => {
@@ -45,5 +47,51 @@ describe('fetchHealth', () => {
   it('rejects a JSON body with the wrong contract', async () => {
     stubFetch(async () => jsonResponse({ status: 'ok', mode: 'production' }));
     await expect(fetchHealth()).rejects.toThrow(/health/i);
+  });
+
+  it('aborts a request that never returns headers and reports a timeout', async () => {
+    vi.useFakeTimers();
+    const fetchMock = stubFetch(
+      (_input, init) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener(
+            'abort',
+            () => reject(Object.assign(new Error('synthetic abort'), { name: 'AbortError' })),
+            { once: true },
+          );
+        }),
+    );
+
+    const pending = fetchHealth();
+    const rejected = expect(pending).rejects.toThrow(/timed out/i);
+    await vi.advanceTimersByTimeAsync(15_000);
+    await rejected;
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    expect(init.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it('aborts a body that never completes and reports a timeout', async () => {
+    vi.useFakeTimers();
+    stubFetch(async (_input, init) => {
+      return {
+        ok: true,
+        status: 200,
+        json: () =>
+          new Promise<unknown>((_resolve, reject) => {
+            init?.signal?.addEventListener(
+              'abort',
+              () => reject(Object.assign(new Error('synthetic abort'), { name: 'AbortError' })),
+              { once: true },
+            );
+          }),
+      } as Response;
+    });
+
+    const pending = fetchHealth();
+    const rejected = expect(pending).rejects.toThrow(/timed out/i);
+    await vi.advanceTimersByTimeAsync(15_000);
+    await rejected;
   });
 });

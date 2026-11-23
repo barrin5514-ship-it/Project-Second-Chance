@@ -4,7 +4,7 @@ Local, fictional-data foundation for a legal-information and reentry-assistance 
 
 ## What exists
 
-- A responsive landing page at `/` with the fictional-data and incomplete-foundation notices, a same-origin API status check, and a keyboard-operable retry when the local API is unavailable.
+- A responsive landing page at `/` with the fictional-data and incomplete-foundation notices, a same-origin API status check that times out after 8 seconds, and a keyboard-operable retry when the local API is unavailable or stalled.
 - `GET /api/health`, which returns exactly `{"status":"ok","mode":"fictional-demo"}` (HTTP 200, JSON) and reads no configuration, provider or user data.
 - The separately approved, opt-in Mira AI connection test at `/mira`. It is not needed for the foundation and is not loaded on `/`.
 - Express API bound to loopback, React/Vite/TypeScript web app, Vitest/Supertest unit and integration tests, and Playwright Chromium browser tests.

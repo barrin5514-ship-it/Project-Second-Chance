@@ -1,4 +1,9 @@
-import express, { type Express, type Request, type Response } from 'express';
+import express, {
+  type Express,
+  type NextFunction,
+  type Request,
+  type Response,
+} from 'express';
 import cookieParser from 'cookie-parser';
 import { AttemptRegistry, type Clock } from './avatar/attemptRegistry';
 import { mountHealthRoute } from './health/health.routes';
@@ -200,6 +205,31 @@ export function createApp(deps: AppDependencies): Express {
   app.use((_req: Request, res: Response) => {
     res.setHeader('Cache-Control', 'no-store');
     res.status(404).json({ error: 'not-found' });
+  });
+
+  // Final JSON error boundary. body-parser runs before routing and its default
+  // errors are HTML with a SyntaxError stack and absolute local paths. These
+  // responses carry a generic code only; nothing from the body/path is logged
+  // or echoed, and configuration/provider code is never reached.
+  app.use((error: unknown, _req: Request, res: Response, next: NextFunction) => {
+    if (res.headersSent) {
+      next(error);
+      return;
+    }
+    res.setHeader('Cache-Control', 'no-store');
+    const status =
+      typeof error === 'object' && error !== null
+        ? (error as { status?: unknown }).status
+        : undefined;
+    if (status === 413) {
+      res.status(413).json({ error: 'payload-too-large' });
+      return;
+    }
+    if (status === 400) {
+      res.status(400).json({ error: 'bad-request' });
+      return;
+    }
+    res.status(500).json({ error: 'internal' });
   });
 
   return app;

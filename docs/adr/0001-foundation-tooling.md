@@ -24,11 +24,11 @@ Consequence: direct navigation to `/mira` relies on the Vite dev server's SPA fa
 
 ### D3 — Exact health contract and generic 404
 
-`GET /api/health` returns HTTP 200 with exactly `{"status":"ok","mode":"fictional-demo"}`, `Cache-Control: no-store`, and no configuration, path, version or user data. It reads no request input and cannot contact the provider. Unknown routes return a generic JSON 404 (`{"error":"not-found"}`) rather than Express's HTML 404 that echoes the path.
+`GET /api/health` returns HTTP 200 with exactly `{"status":"ok","mode":"fictional-demo"}`, `Cache-Control: no-store`, and no configuration, path, version or user data. It reads no request input and cannot contact the provider. Unknown routes return a generic JSON 404 (`{"error":"not-found"}`) rather than Express's HTML 404 that echoes the path. A final four-argument JSON error boundary maps body-parser failures to generic `400 {error:"bad-request"}` and `413 {error:"payload-too-large"}` responses, other errors to `500 {error:"internal"}`, and never echoes request text or a stack/path; configuration and provider code are not reached.
 
 ### D4 — The landing reports availability only from the validated health contract
 
-`fetchHealth()` uses same-origin fetch with `cache: 'no-store'`, rejects non-2xx, unreadable JSON and any body other than the exact fictional-demo contract. The landing has checking, available and unavailable states with a keyboard-operable Retry that issues a fresh request and clears the failure on success. It renders no form, sign-in, upload or sensitive input.
+`fetchHealth()` uses same-origin fetch with `cache: 'no-store'` and an 8-second `AbortController` budget that stays armed through `response.json()`. It rejects non-2xx, unreadable JSON, a stalled request/body past that budget, and any body other than the exact fictional-demo contract. The landing has checking, available and unavailable states with a keyboard-operable Retry that issues a fresh request and clears the failure on success. It renders no form, sign-in, upload or sensitive input.
 
 ### D5 — Documentation and evidence are part of the foundation
 

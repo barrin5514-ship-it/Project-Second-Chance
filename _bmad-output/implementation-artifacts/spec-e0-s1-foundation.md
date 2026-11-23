@@ -86,10 +86,13 @@ context:
 - The landing validates only the same-origin health contract and exposes checking/available/unavailable plus keyboard Retry. It renders no form, sign-in or upload input.
 - `/` is the foundation landing; `/mira` remains the preserved opt-in Mira page. The SDK and Mira page are loaded only on `/mira`, so the foundation page makes no provider call or SDK evaluation.
 - Express was patched from 4.21.2 to 4.22.3 after `npm audit` found 4 production advisories; re-audit is clean and all suites were rerun.
-- Actual final checks: `npm test` 162 tests/16 files; `npm run test:api` 83/6; `npm run test:e2e` 38; typecheck 0; build 0; secrets guard 0 / 7 tests; audit 0 production vulnerabilities.
-- Remaining: independent Codex testing, actual Claude review and owner merge approval. Authentication, private storage, encryption, consent, legal verification, court access and recovery remain future gates.
+- Actual final checks: `npm test` 167 tests/16 files; `npm run test:api` 85/6; `npm run test:e2e` 38; unchanged independent probes 6 + 3 + 2; typecheck 0; build 0; secrets guard 0 / 7 tests; audit 0 production vulnerabilities.
+- Independent-review fixes: `fetchHealth` now aborts after 8 seconds with the timer armed through body reading, so a stalled health check reaches unavailable + Retry; a final JSON error boundary maps malformed/oversized bodies to generic 400/413 JSON without stack/path echo. The browser regression guard now asserts the only `/api/` request is `/api/health`.
+- Remaining: Codex retest of these fixes, follow-up Claude verification and owner merge approval. Focus-after-Retry and abort-on-unmount (P3) remain deferred. Authentication, private storage, encryption, consent, legal verification, court access and recovery remain future gates.
 
 ## Spec Change Log
+
+- **2026-11-23 — independent-testing fault paths (owner-directed retest).** Codex and actual Claude review found two P2 cases omitted from the original LANDING_UNAVAILABLE matrix row: a hang/stalled body, and parser errors before routing. Amended behavior: the health client owns a bounded 8 s timeout through body reading, and a final JSON error boundary maps parser/size failures to generic 400/413/500 JSON without stack/path/body echo. Known-bad states avoided: indefinite Checking with no Retry, and HTML stack disclosure of local paths. KEEP: exact health body, generic 404, no provider/config access, Mira opt-in isolation, keyboard retry.
 
 ## Review Triage Log
 

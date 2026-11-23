@@ -1,6 +1,6 @@
 # Project Second Chance threat model
 
-Status: **INITIAL, E0-S1 ONLY — NOT A SECURITY ASSESSMENT.** Written 2026-11-23 for the local fictional-demo foundation. No control below is a verified security guarantee. Authentication, encryption, consent and legal-verification controls are **not implemented** and remain pending for their dedicated stories. Independent Codex testing and Claude review have not yet occurred for this foundation.
+Status: **INITIAL, E0-S1 ONLY — NOT A SECURITY ASSESSMENT.** Written 2026-11-23 for the local fictional-demo foundation. Codex independent testing and actual Claude review have occurred once; both found the same two P2 fault paths (stalled health check, parser stack disclosure), which are now fixed with maintained tests and unchanged independent probes. Retest is pending. No control below is a verified security guarantee. Authentication, encryption, consent and legal-verification controls are **not implemented** and remain pending for their dedicated stories.
 
 ## Scope
 
@@ -27,13 +27,15 @@ In scope: the local React/Vite web app, the Express API on loopback, the `/api/h
 | Threat | Current control | Honest limitation |
 | --- | --- | --- |
 | Health route leaks paths, versions, environment or user data | Fixed exact JSON body; reads no config, request path or provider; generic JSON 404 | Source-inspection/tests only; no independent penetration test |
-| Foundation flow calls an AI provider or court source | `/` loads no SDK and requests only same-origin `/api/health`; browser test captures external requests | A future change could add a call; regression test is the guard |
+| Foundation flow calls an AI provider or court source | `/` loads no SDK and requests only same-origin `/api/health`; browser test asserts every `/api/` request is `/api/health` and none matches `avatar`/`nuance` | A future change could add a call; regression tests are the guard |
 | Local service exposed to the network | Vite and Express bind `127.0.0.1`; no hosting configured | A misconfigured host/port or proxy could still expose it; no hosted hardening |
 | Secret committed or sent to browser | `.env` ignored; `.env.example` placeholders; server-only key loading; `verify-secrets` source scan | The guard is pattern-based and not a full secret scanner; no history rewrite proof |
-| Untrusted request body/path reflected into errors | Health ignores input; JSON body limit; explicit generic 404; no stack traces in handled routes | Express framework behavior outside these routes is not exhaustively tested |
+| Health check stalls forever with no recovery | `fetchHealth` aborts after 8 s, with the timer armed through JSON body reading; the landing shows unavailable + keyboard Retry | Timeout value is an implementation choice; tested with synthetic stalled fetch/body, not every real network failure |
+| Malformed or oversized JSON leaks a stack or local paths | Final JSON error boundary maps body-parser 400 → `{error:"bad-request"}`, 413 → `{error:"payload-too-large"}`, other errors → 500 `{error:"internal"}`; `no-store`, no body/path/stack echo, no logging | Covers this app's parser/framework errors; not a general Express hardening proof |
+| Untrusted request body/path reflected into errors | Health ignores input; 1 kb JSON limit; generic 404; sanitized parser/size error boundary | Parsing stays enabled; other future routes need their own input limits |
 | Cross-site request to state-changing Mira routes | Existing exact-Origin POST check, loopback Host check, HttpOnly SameSite=Strict cookie and double-submit CSRF | Applies to the opt-in Mira prototype only; not an account-security design |
 | XSS through displayed data | React escaping; E0-S1 renders static copy and health status only | Future extracted/user content needs its own sanitisation and CSP review |
-| Dependency/supply-chain drift | Lockfile, pinned versions, recorded installed versions | No independent vulnerability audit or SBOM claimed |
+| Dependency/supply-chain drift | Lockfile, exact pins, recorded installed versions; Express 4.22.3 patched after audit | No independent vulnerability audit or SBOM claimed |
 
 ## Pending controls (OPEN, not activated here)
 

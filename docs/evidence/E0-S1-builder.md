@@ -1,6 +1,6 @@
 # E0-S1 builder evidence — runnable fictional-demo foundation
 
-Builder: DeepSeek. Status: **BUILDER IMPLEMENTATION COMPLETE — STOPPED FOR CODEX INDEPENDENT TESTING AND ACTUAL CLAUDE REVIEW.** This file records observed results only. It does not claim Codex acceptance, Claude approval or owner merge approval. No merge, push, deployment or live provider session occurred. The real `.env` was not read, quoted or committed.
+Builder: DeepSeek. Status: **RETEST FIXES COMPLETE — STOPPED FOR CODEX RETESTING AND CLAUDE VERIFICATION.** This file records observed results only. Codex independent testing on `f822e65` returned **CHANGES REQUIRED** and actual Claude review independently confirmed two P2 fault paths; both are fixed with observed RED→GREEN tests below. It does not claim Codex acceptance, final Claude approval or owner merge approval. No merge, push, deployment or live provider session occurred. The real `.env` was not read, quoted or committed.
 
 ## Identity and scope
 
@@ -28,6 +28,18 @@ The working Mira prototype and all prior tests (150 unit/integration tests, 26 b
 
 **TDD honesty note:** `health.ts` and `FoundationLanding.tsx` were created as minimal throwing/empty placeholders before their tests so the first failing assertion reflected missing behaviour rather than a missing module. Those placeholders implemented no application behavior. The browser test failures were observed before the entry-route implementation. The Mira preservation row is a regression check, not retroactive TDD.
 
+## Independent-testing round — two P2 fault paths fixed (2026-11-23)
+
+Codex tested `f822e65`: `npm test` 162/162, `npm run test:e2e` 38/38, and all five earlier Mira probes passed, but its six-case foundation probe reported **2 passed / 4 failed**. Actual Claude review (`docs/evidence/E0-S1-claude-review-f822e65.md`) independently classified the same two defects P2. I reproduced both in maintained tests before changing code.
+
+| Behaviour | RED | Minimal fix | GREEN |
+| --- | --- | --- | --- |
+| Stalled health request must time out and offer Retry (AC5, R07/R20) | `npx vitest run apps/web/src/api/health.test.ts apps/web/src/foundation/FoundationLanding.test.tsx` → **3 failed**: a pending fetch and a stalled body never rejected (test timeout) and the page stayed on “Checking the local API…” with no Retry. The unchanged foundation probe failed its two stall cases. | `fetchHealth` owns an 8-second `AbortController`, keeps the timer armed through `response.json()`, aborts on timeout and reports a generic health-timeout error; the existing landing state/active guard then shows unavailable + Retry. | `health.test.ts` **6 passed**, `FoundationLanding.test.tsx` **7 passed**, unchanged probe **6 passed** |
+| Malformed/oversized JSON must not expose HTML stack paths (AC3, R07/R23) | `npx vitest run apps/server/src/health/health.routes.test.ts` → **2 failed**: malformed and over-limit bodies returned HTML with `SyntaxError`, absolute local paths and the wrong content type. The unchanged foundation probe failed both cases. | Final four-argument JSON error middleware after the 404 handler: body-parser status 413 → `{error:"payload-too-large"}`, status 400 → `{error:"bad-request"}`, everything else → 500 `{error:"internal"}`; `no-store`, no body/path/stack echo and no logging; configuration/provider code is not reached. | `health.routes.test.ts` **4 passed**, `npm run test:api` **85 passed**, unchanged probe **6 passed** |
+
+- **P3 during the same round:** the foundation browser test now asserts that every `/api/` request is `/api/health` and that none matches `avatar` or `nuance` (F4 regression guard). Focus-after-Retry (F3) and aborting the health request on unmount remain recorded but **not implemented**; they are nonblocking notes.
+- **Final numbers after both fixes:** `npm test` **167 passed / 16 files**; `npm run test:api` **85 passed / 6 files**; `npm run test:e2e` **38 passed**; unchanged probes **6 + 3 + 2 passed**; typecheck 0; build 0; audit 0; secrets 0 / 7 tests.
+
 ## Other necessary checks (not TDD)
 
 - **BMAD installation/version:** manifest records 6.12.4; rendered build workflow executed. Not a claim that every workflow step was independently verified.
@@ -42,11 +54,14 @@ The working Mira prototype and all prior tests (150 unit/integration tests, 26 b
 
 | Check and exact command | Exit | Test count / observed result | Limitations or failure names |
 | --- | --- | --- | --- |
-| `npm test` | 0 | **162 passed, 16 files** | Builder tests only; independent Codex testing still required |
-| `npm run test:api` | 0 | **83 passed, 6 files** | Health tests use a controlled app/fake provider; no live provider |
+| `npm test` | 0 | **167 passed, 16 files** | Builder tests only; Codex retest still required |
+| `npm run test:api` | 0 | **85 passed, 6 files** | Health tests use a controlled app/fake provider; no live provider |
 | `npm run test:e2e` | 0 | **38 passed** (foundation + Mira, two viewports) | Uses local dev servers, fake microphone and no provider key |
+| `npx vitest run --config .setup/vitest.codex-foundation.config.ts` | 0 | **6 passed** (unchanged independent foundation probe) | Fake timers/synthetic fetch; no real network outage |
+| `npx vitest run --config .setup/vitest.codex-sdk-contract.config.ts` | 0 | **3 passed** (preserved Mira SDK/consent probe) | No connect/provider call |
+| `npx vitest run --config .setup/vitest.codex-review.config.ts` | 0 | **2 passed** (preserved Mira media/restart probe) | Synthetic SDK/media only |
 | `npm run typecheck` | 0 | no diagnostics (tsc 5.7.2) | Does not observe the editor panel |
-| `npm run build` | 0 | Vite 6.0.3, 2.64 s; 148.26 kB main + 9.92 kB Mira + 664.09 kB SDK chunk | Informational chunk-size warning only |
+| `npm run build` | 0 | Vite 6.0.3, 3.38 s; 148.26 kB main + 9.92 kB Mira + 664.09 kB SDK chunk | Informational chunk-size warning only |
 | `npm run verify:secrets` | 0 | tracked-source pattern scan clean | Pattern check, not a comprehensive secret scan |
 | `npm run test:secrets` | 0 | **7 passed** | Test double fixtures only |
 | `npm audit --omit=dev --audit-level=high` | 0 | **0 vulnerabilities** after Express 4.22.3 | Production dependencies only; not a full supply-chain review |
@@ -73,11 +88,11 @@ The working Mira prototype and all prior tests (150 unit/integration tests, 26 b
 | --- | --- | --- |
 | R05 sensitive records/provider leakage | No private data or uploads activated; foundation reads no config; Mira keeps server-held key/token controls | **OPEN for future workflows** — account isolation and encryption not implemented |
 | R06 five workflows exceed time | Only E0-S1 foundation completed; Mira preserved; no later feature built | **IN PROGRESS** — later gates unimplemented |
-| R07 external service unavailable | Health failure/malformed/retry tests; Mira provider failure tests from prior evidence | **AWAITING INDEPENDENT VERIFICATION** for foundation; no live provider in this story |
+| R07 external service unavailable | Health failure/malformed/stalled timeout and retry tests; sanitized parser-failure responses; Mira provider failure tests from prior evidence | **AWAITING INDEPENDENT VERIFICATION** — two P2 fault paths fixed, Codex retest pending; no live provider in this story |
 | R09 wrong repo/Git ownership | Absolute path and branch checked; scoped diff; no global settings | **AWAITING INDEPENDENT VERIFICATION** |
 | R10 framework/dependency drift | BMAD 6.12.4; exact pins; lockfile; Express 4.22.3 audit clean | **AWAITING INDEPENDENT VERIFICATION**; no full SBOM |
 | R19 recovery | Not activated; no database/blobs | **OPEN** — later persistence story |
-| R20 inaccessible UI/failure states | Landing keyboard retry, narrow viewport and no-horizontal-scroll browser tests | **AWAITING INDEPENDENT VERIFICATION**; no screen-reader audit |
+| R20 inaccessible UI/failure states | Landing keyboard retry, stalled-request recovery, narrow viewport and no-horizontal-scroll browser tests | **AWAITING INDEPENDENT VERIFICATION**; focus-after-Retry (P3) deferred; no screen-reader audit |
 | R23 self-certified TDD/reviews | Observed RED/GREEN table; Codex/Claude/owner gates not claimed | **AWAITING INDEPENDENT VERIFICATION** |
 | R24 scope creep | Only missing E0-S1 behavior; Mira retained; no later feature | **AWAITING INDEPENDENT VERIFICATION** |
 | R25 write/locking failure | Disposable write/read/delete probe succeeded; no storage workflow activated | **OPEN** for future storage fault tests |
@@ -86,8 +101,8 @@ The working Mira prototype and all prior tests (150 unit/integration tests, 26 b
 ## Run and review handoff
 
 - Local startup: `npm ci`, then `npm run dev`. Landing `http://127.0.0.1:5173/`, Mira `http://127.0.0.1:5173/mira`, health `http://127.0.0.1:3001/api/health`. Checks: `npm test`, `npm run test:api`, `npm run test:e2e`, `npm run typecheck`, `npm run build`, secret scripts.
-- Files changed: health route/test, `app.ts` mount+404, web health client/test, foundation landing/test/CSS, `main.tsx` routing, Mira back link, foundation browser spec, Mira browser navigation, README, threat model, ADR-0001, `.env.example`, `package.json`/lockfile (Express patch), BMAD spec, this evidence.
-- Known gaps: no independent Codex testing or actual Claude review yet; no live Mira run in this story; no accounts/private documents/encryption/consent/legal/court capabilities; route choice is an implementation proposal; editor Problems panel unobserved; no full dependency SBOM or independent security assessment.
-- Codex independent report: **pending — not performed.**
-- Claude review: **pending — not performed.**
+- Files changed: health route/test, `app.ts` health mount + generic 404 + JSON error boundary, web health client/test (8 s timeout), foundation landing/test/CSS, `main.tsx` routing, Mira back link, foundation browser spec (including the `/api/` request guard), Mira browser navigation, README, threat model, ADR-0001, `.env.example`, `package.json`/lockfile (Express patch), BMAD spec, this evidence, and the preserved Codex/Claude review reports.
+- Known gaps: Codex retest and follow-up Claude verification are still pending; focus-after-Retry and health-request abort on unmount (P3) are deferred; no live Mira run in this story; no accounts/private documents/encryption/consent/legal/court capabilities; route choice is an implementation proposal; editor Problems panel unobserved; no full dependency SBOM or independent security assessment.
+- Codex independent report: **performed on `f822e65` — CHANGES REQUIRED (two P2s); retest of these fixes pending.**
+- Claude review: **performed on `f822e65` — two P2s independently confirmed; follow-up verification pending.**
 - Owner merge decision: **pending — no merge or push performed.**
