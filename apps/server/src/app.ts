@@ -6,6 +6,7 @@ import express, {
 } from 'express';
 import cookieParser from 'cookie-parser';
 import { AttemptRegistry, type Clock } from './avatar/attemptRegistry';
+import type { AuthDependencies } from './auth/auth';
 import { mountHealthRoute } from './health/health.routes';
 import { mintSessionToken, type FetchLike } from './avatar/nuanceGateway';
 import {
@@ -22,7 +23,8 @@ import {
  * The only origins the browser may use. Both loopback, both the Vite dev port,
  * so the page is same-origin with itself and can call the API through the proxy.
  */
-export const LOCAL_ORIGINS = ['http://127.0.0.1:5173', 'http://localhost:5173'] as const;
+import { LOCAL_ORIGINS } from './security/localOrigins';
+export { LOCAL_ORIGINS };
 
 export interface AppDependencies {
   hasApiKey: boolean;
@@ -32,6 +34,8 @@ export interface AppDependencies {
   clock: Clock;
   tokenTtlMs?: number;
   providerTimeoutMs?: number;
+  /** Optional in tests/foundation-only runs; production main supplies it. */
+  auth?: AuthDependencies;
 }
 
 interface SessionRecord {
@@ -55,12 +59,21 @@ export function createApp(deps: AppDependencies): Express {
   const allowedOrigins: readonly string[] = LOCAL_ORIGINS;
 
   app.disable('x-powered-by');
+
   app.use(cookieParser());
   app.use(express.json({ limit: '1kb' }));
   // No CORS middleware: cross-origin use is not supported or permitted.
 
   // Foundation contract: exact body, no configuration or provider access.
   mountHealthRoute(app);
+
+  // Account sessions are optional so the public foundation/health and Mira
+  // tests can run without SQLite or an auth secret. They mount after health so
+  // the health contract never depends on session/database state.
+  if (deps.auth !== undefined) {
+    for (const middleware of deps.auth.middleware) app.use(middleware);
+    app.use(deps.auth.router);
+  }
 
   app.get('/api/avatar/bootstrap', (req: Request, res: Response) => {
     const host = req.headers.host;
@@ -223,6 +236,14 @@ export function createApp(deps: AppDependencies): Express {
         : undefined;
     if (status === 413) {
       res.status(413).json({ error: 'payload-too-large' });
+      return;
+    }
+    if (status === 403) {
+      res.status(403).json({ error: 'forbidden' });
+      return;
+    }
+    if (status === 401) {
+      res.status(401).json({ error: 'unauthenticated' });
       return;
     }
     if (status === 400) {

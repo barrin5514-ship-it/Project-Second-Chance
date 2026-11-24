@@ -48,6 +48,10 @@ export default defineConfig({
       timeout: 60_000,
       env: {
         PSC_E2E_NO_KEY: '1',
+        // The real browser suite creates a handful of accounts per project. The
+        // API tests still exercise the production throttles; E2E must not become
+        // order-dependent when both viewport projects run.
+        PSC_E2E_AUTH_RELAXED: '1',
         PORT: '3001',
       },
     },

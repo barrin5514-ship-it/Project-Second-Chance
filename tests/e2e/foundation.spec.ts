@@ -9,20 +9,24 @@ import { test, expect } from '@playwright/test';
 const BASE = 'http://127.0.0.1:5173';
 
 test.describe('foundation landing', () => {
-  test('states the fictional boundary and incomplete foundation without a form', async ({ page }) => {
+  test('states the fictional boundary and links demo accounts without a landing form', async ({ page }) => {
     await page.goto('/');
 
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('Project Second Chance');
     await expect(page.getByText('Fictional data only', { exact: true })).toBeVisible();
     await expect(
       page.getByText(
-        'Development foundation — accounts and protected uploads are not available yet.',
+        'Local fictional-data foundation — demo accounts are available; protected uploads are not.',
         { exact: true },
       ),
     ).toBeVisible();
     await expect(page.getByRole('main')).toContainText(/legal information, not legal advice/i);
     await expect(page.getByRole('main')).toContainText(/does not decide eligibility/i);
     await expect(page.locator('form, input, textarea, select')).toHaveCount(0);
+    await expect(page.getByRole('link', { name: /create a fictional account/i })).toHaveAttribute(
+      'href',
+      '/account',
+    );
     await expect(page.getByRole('link', { name: /mira/i })).toHaveAttribute('href', '/mira');
   });
 

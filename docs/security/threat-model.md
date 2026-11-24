@@ -1,51 +1,54 @@
 # Project Second Chance threat model
 
-Status: **INITIAL, E0-S1 ONLY — NOT A SECURITY ASSESSMENT.** Written 2026-11-23 for the local fictional-demo foundation. Codex independent testing and actual Claude review have occurred once; both found the same two P2 fault paths (stalled health check, parser stack disclosure), which are now fixed with maintained tests and unchanged independent probes. Retest is pending. No control below is a verified security guarantee. Authentication, encryption, consent and legal-verification controls are **not implemented** and remain pending for their dedicated stories.
+Status: **INITIAL, E0-S1 + E1-S1 — NOT A SECURITY ASSESSMENT.** Updated 2026-11-24 for the local fictional-demo account/session slice. No control below is a verified security guarantee. Independent Codex testing and actual Claude review of E1-S1 are pending. Authentication now exists locally, but per-case/document authorization, encryption, recovery, consent and hosting remain pending for their dedicated stories.
 
 ## Scope
 
-In scope: the local React/Vite web app, the Express API on loopback, the `/api/health` contract, the fictional-demo landing/status/retry flow, and the already-approved optional `/mira` connection test. Out of scope: real user records, production/hosted deployment, accounts, private cases, uploads, OCR, legal answers, court integrations and external AI consent workflows.
+In scope: the local React/Vite web app, the Express API on loopback, the `/api/health` contract, the fictional-demo landing/status/retry flow, the `/account` page and `/api/auth/*` routes, SQLite account/session metadata, and the already-approved optional `/mira` connection test. Out of scope: real user records, production/hosted deployment, private cases, uploads, OCR, legal answers, court integrations, external AI consent workflows, password recovery/email delivery and MFA/OAuth.
 
 ## Assets
 
-- Future private case documents, extracted text, notices and drafts (not stored in this story).
-- Credentials: `NUANCE_API_KEY`, future authentication secrets, future encryption keys.
-- Provider session tokens for the optional Mira test (`st_…`) and the API key (`nk_…`).
+- Fictional demo account identifiers, Argon2id password hashes and opaque account/session IDs.
+- The generated session secret under `runtime/`, the local auth SQLite file, and future encryption keys.
+- `NUANCE_API_KEY`, provider session tokens for the optional Mira test (`st_…`) and account sessions.
 - Trust in product labels: fictional versus live data, AI versus human, uncertain versus established fact.
 - Availability and integrity of the local demonstration.
 
 ## Trust boundaries
 
-1. **Browser (untrusted) ↔ Express API.** The browser can send arbitrary requests; the server owns validation, authorization and durable writes. In E0-S1 the only new read-only route is `/api/health`; the Mira routes keep their existing Origin, loopback-Host, session-cookie and CSRF checks.
-2. **Express API ↔ local filesystem / future SQLite and encrypted blobs.** Not activated in E0-S1. Environment secrets are read server-side only.
-3. **Express API ↔ optional Nuance provider.** Activated only by the explicit Mira Start flow; the foundation landing and health check never call it. Automated suites run with the key disabled.
+1. **Browser (untrusted) ↔ Express API.** The browser can send arbitrary requests; the server owns credential verification, session issuance, CSRF/origin checks and durable writes. `/account` uses same-origin requests only; there is no CORS.
+2. **Express API ↔ local SQLite / runtime secret.** Account rows and serialized sessions are local metadata. The auth secret is generated into git-ignored `runtime/`; no database, secret or key is sent to the browser. Private document encryption is not implemented.
+3. **Express API ↔ optional Nuance provider.** Activated only by the explicit Mira Start flow; account routes never import or evaluate the Nuance SDK. Automated suites run with the provider key disabled.
 4. **Application ↔ future court/legal sources.** Not activated.
-5. **Development machine ↔ version control.** `.env`, databases, uploads, keys and runtime data must stay untracked.
+5. **Development machine ↔ version control.** `.env`, `runtime/`, databases, uploads, keys and session secrets must stay untracked.
 
-## Controls present in E0-S1 (evidence in `docs/evidence/E0-S1-builder.md`)
+## Controls present in E1-S1 (evidence in `docs/evidence/E1-S1-builder.md`)
 
 | Threat | Current control | Honest limitation |
 | --- | --- | --- |
-| Health route leaks paths, versions, environment or user data | Fixed exact JSON body; reads no config, request path or provider; generic JSON 404 | Source-inspection/tests only; no independent penetration test |
-| Foundation flow calls an AI provider or court source | `/` loads no SDK and requests only same-origin `/api/health`; browser test asserts every `/api/` request is `/api/health` and none matches `avatar`/`nuance` | A future change could add a call; regression tests are the guard |
-| Local service exposed to the network | Vite and Express bind `127.0.0.1`; no hosting configured | A misconfigured host/port or proxy could still expose it; no hosted hardening |
-| Secret committed or sent to browser | `.env` ignored; `.env.example` placeholders; server-only key loading; `verify-secrets` source scan | The guard is pattern-based and not a full secret scanner; no history rewrite proof |
-| Health check stalls forever with no recovery | `fetchHealth` aborts after 8 s, with the timer armed through JSON body reading; the landing shows unavailable + keyboard Retry | Timeout value is an implementation choice; tested with synthetic stalled fetch/body, not every real network failure |
-| Malformed or oversized JSON leaks a stack or local paths | Final JSON error boundary maps body-parser 400 → `{error:"bad-request"}`, 413 → `{error:"payload-too-large"}`, other errors → 500 `{error:"internal"}`; `no-store`, no body/path/stack echo, no logging | Covers this app's parser/framework errors; not a general Express hardening proof |
-| Untrusted request body/path reflected into errors | Health ignores input; 1 kb JSON limit; generic 404; sanitized parser/size error boundary | Parsing stays enabled; other future routes need their own input limits |
-| Cross-site request to state-changing Mira routes | Existing exact-Origin POST check, loopback Host check, HttpOnly SameSite=Strict cookie and double-submit CSRF | Applies to the opt-in Mira prototype only; not an account-security design |
-| XSS through displayed data | React escaping; E0-S1 renders static copy and health status only | Future extracted/user content needs its own sanitisation and CSP review |
-| Dependency/supply-chain drift | Lockfile, exact pins, recorded installed versions; Express 4.22.3 patched after audit | No independent vulnerability audit or SBOM claimed |
+| Password cracking after a database leak | Argon2id via `@node-rs/argon2` with explicit m=19456, t=2, p=1, 32-byte output; library-generated salts; library verify | Parameters are an implementation baseline, not an independent benchmark; a weak user password can still be guessed |
+| Credential stuffing / brute force | Per-normalized-email and per-source-IP fixed-window limits on login; per-source registration limit; generic 401/429; no permanent lockout | In-memory, per-process, reset on restart; no distributed store or CAPTCHA; a determined attacker can spread across sources |
+| Account enumeration | Same generic 401 for wrong password and unknown account; dummy Argon2 verification for missing/disabled accounts; generic registration failure; no account list | Registration necessarily returns a generic failure for duplicates; no email ownership verification exists |
+| Session fixation | Passport regenerates the session id on login; CSRF token is rotated; the pre-login cookie cannot authenticate | Depends on Passport/express-session behavior; covered by regression tests, not a formal proof |
+| Session theft / replay | Signed opaque session id; `HttpOnly`, `SameSite=Lax`, path-scoped cookie; server-side rejection after logout/expiry; absolute 8-hour and rolling 30-minute limits | `Secure` is false on documented loopback HTTP; any local process that can read the cookie/DB may impersonate the demo account. Hosted use requires TLS/Secure and separate review |
+| CSRF | `csrf-sync` synchronizer token in the session plus exact loopback `Origin` and loopback `Host` checks; no CORS; state-changing routes are POST-only | SameSite and Origin checks are browser-dependent; no protection against a compromised browser/extension |
+| Cross-account access | No account list/admin route; `/api/auth/me` derives identity only from the server session; caller-supplied ids/query/header ignored; two-account tests | This proves the account boundary only. Future cases/documents need per-resource authorization and ownership checks |
+| Credential/session data in logs, URLs or browser storage | Passwords only in POST bodies over the same-origin endpoint, hashed before storage; no password/token logging; client keeps credentials in React state only, never URL/localStorage | Error/log review is source- and test-based; no full log-redaction proof |
+| Store/secret failure creates false success | Missing/short secret fails startup; session save/destroy failures return generic 503 rather than success; store errors fail closed | Failure injection uses test doubles; disk-full/OS-level faults are not exhaustively simulated |
+| Untrusted JSON/parser path disclosure | 1 KiB JSON limit; final error boundary maps 400/403/413 to generic JSON without stacks/paths/body echo | Framework-level parser errors only; future routes need their own limits |
+| XSS through account data | React escapes the displayed fictional email; no HTML rendering of account input | No CSP or future document-content sanitisation is claimed |
+| Dependency/supply-chain drift | Exact pins; lockfile; `npm audit --omit=dev` reported 0 vulnerabilities on 2026-11-24; Argon2 native binding verified on Windows/Node 26 | Audit is point-in-time, not an SBOM or independent vulnerability assessment |
 
 ## Pending controls (OPEN, not activated here)
 
-- **Accounts/sessions (R11):** maintained auth library, Argon2id, secure cookies, throttling, revocation and authorization tests.
 - **Private documents (R12/R13):** authenticated encryption with separate keys, content/type/size validation, parser limits, ownership checks and deletion.
+- **Per-resource authorization (R05):** every future case/document query must resolve to the authenticated owner; two-account tests must extend to those resources.
+- **Password recovery/email (future):** no reset bypass exists in this slice. Any recovery delivery needs its own design, anti-enumeration and token-expiry review.
 - **AI consent (R15):** server-checked provider/purpose/scope consent, refusal path, revocation and minimum-data filtering.
 - **Prompt injection (R16):** uploaded/retrieved/model content treated as evidence, never authority; authorization and consent rechecked at each boundary.
 - **Legal safety (R04/R17/R22):** curated versioned sources, claim-level support or abstention, explicit uncertainty, no invented deadlines or eligibility, fictional/live separation.
 - **Court access (R01–R03):** permitted official access or approved fictional/manual fallback; no identity claims from name matches.
-- **Backup/recovery (R19) and hosting (R21):** consistent encrypted snapshots, separately recovered keys, tested restore; restricted fictional-only hosted demo with TLS and authentication.
+- **Backup/recovery (R19) and hosting (R21):** consistent encrypted snapshots, separately recovered keys, tested restore; restricted fictional-only hosted demo with TLS, Secure cookies and authentication.
 - **Real-use gates (R08/R21):** independent security and qualified legal review before real records or public access.
 
 ## Assumptions and limitations
