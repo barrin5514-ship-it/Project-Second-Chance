@@ -43,6 +43,11 @@ export interface AuthDependencies {
   router: Router;
   accountStore: AccountStore;
   sessionStore: SqliteSessionStore;
+  requireAuth: RequestHandler;
+  isAuthorized: (req: Request) => boolean;
+  csrfProtection: RequestHandler;
+  requireLoopbackHost: RequestHandler;
+  requireExactOrigin: RequestHandler;
   close(): void;
 }
 
@@ -188,6 +193,12 @@ export function createAuth(options: AuthOptions): AuthDependencies {
       secure: cookieSecure,
       path: '/',
     });
+  }
+
+  function isAuthorized(req: Request): boolean {
+    if (!req.isAuthenticated() || req.user === undefined) return false;
+    const createdAt = req.session.createdAt;
+    return typeof createdAt === 'number' && now() - createdAt <= absoluteTtlMs;
   }
 
   function requireAuth(req: Request, res: Response, next: () => void): void {
@@ -384,6 +395,11 @@ export function createAuth(options: AuthOptions): AuthDependencies {
     router,
     accountStore: accounts,
     sessionStore,
+    requireAuth,
+    isAuthorized,
+    csrfProtection: csrfSynchronisedProtection,
+    requireLoopbackHost,
+    requireExactOrigin,
     close() {
       sessionStore.close();
       accounts.close();

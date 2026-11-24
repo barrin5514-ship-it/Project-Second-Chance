@@ -2,6 +2,7 @@ import express, {
   type Express,
   type NextFunction,
   type Request,
+  type RequestHandler,
   type Response,
 } from 'express';
 import cookieParser from 'cookie-parser';
@@ -36,6 +37,8 @@ export interface AppDependencies {
   providerTimeoutMs?: number;
   /** Optional in tests/foundation-only runs; production main supplies it. */
   auth?: AuthDependencies;
+  /** Private case/document API; requires auth middleware to be mounted. */
+  privateDocuments?: { router: RequestHandler };
 }
 
 interface SessionRecord {
@@ -74,6 +77,7 @@ export function createApp(deps: AppDependencies): Express {
     for (const middleware of deps.auth.middleware) app.use(middleware);
     app.use(deps.auth.router);
   }
+  if (deps.privateDocuments !== undefined) app.use(deps.privateDocuments.router);
 
   app.get('/api/avatar/bootstrap', (req: Request, res: Response) => {
     const host = req.headers.host;

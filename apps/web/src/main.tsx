@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import FoundationLanding from './foundation/FoundationLanding';
 import AccountPage from './account/AccountPage';
+import CasesPage from './cases/CasesPage';
 import './styles.css';
 
 const container = document.getElementById('root');
@@ -14,6 +15,12 @@ if (path === '/account') {
   root.render(
     <StrictMode>
       <AccountPage />
+    </StrictMode>,
+  );
+} else if (path === '/cases') {
+  root.render(
+    <StrictMode>
+      <CasesPage />
     </StrictMode>,
   );
 } else if (path === '/mira') {

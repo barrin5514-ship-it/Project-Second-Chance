@@ -4,6 +4,8 @@ import { createApp, LOCAL_ORIGINS } from './app';
 import { AttemptRegistry } from './avatar/attemptRegistry';
 import { createAuth } from './auth/auth';
 import { loadAuthSettings } from './auth/authConfig';
+import { initializePrivateStore, loadPrivatePaths } from './private/privateConfig';
+import { createPrivateRouter } from './private/privateRoutes';
 
 const LOOPBACK_HOST = '127.0.0.1';
 const PORT = Number(process.env.PORT ?? 3001);
@@ -33,6 +35,10 @@ const auth = createAuth({
       }
     : {}),
 });
+const privateStore = initializePrivateStore({
+  db: auth.accountStore.db,
+  paths: loadPrivatePaths(),
+});
 const app = createApp({
   hasApiKey,
   readApiKey: () => (e2eNoKey ? null : readApiKey()),
@@ -40,6 +46,7 @@ const app = createApp({
   registry: new AttemptRegistry({ clock: { now: () => Date.now() }, tokenTtlMs: 60_000 }),
   clock: { now: () => Date.now() },
   auth,
+  privateDocuments: { router: createPrivateRouter({ auth, store: privateStore.store }) },
 });
 
 // Bind loopback only: this prototype is never reachable from another machine.
@@ -49,6 +56,7 @@ const server = createServer(app).listen(PORT, LOOPBACK_HOST, () => {
 });
 
 function shutdown(): void {
+  privateStore.store.reconcile();
   auth.close();
   server.close(() => {
     process.exit(0);

@@ -318,8 +318,11 @@ export default function AccountPage({ client = accountClient }: AccountPageProps
             Signed in as <strong>{user.email}</strong>.
           </p>
           <p>
-            This account can be used for the fictional demo. Private cases, protected uploads and
-            legal features are not part of this slice.
+            This account can be used for the fictional demo. Private cases are available through
+            the link below; legal features and AI consent are not part of this slice.
+          </p>
+          <p>
+            <a href="/cases">Open private cases</a>
           </p>
           <button type="button" onClick={() => void handleLogout()} disabled={busy !== null}>
             {busy === 'logout' ? 'Signing out…' : 'Sign out'}

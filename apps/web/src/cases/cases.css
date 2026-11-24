@@ -1,0 +1,162 @@
+.cases-page {
+  max-width: 58rem;
+  margin: 0 auto;
+  padding: 2rem 1.25rem 3rem;
+  color: #1d2733;
+  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  line-height: 1.55;
+}
+
+.cases-page h1 {
+  margin: 0.35rem 0 0.75rem;
+  font-size: clamp(1.8rem, 4vw, 2.5rem);
+}
+
+.cases-banner {
+  display: inline-block;
+  margin: 0;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  background: #fef3c7;
+  color: #713f12;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.cases-page a {
+  color: #14532d;
+}
+
+.cases-panel {
+  margin: 1.25rem 0;
+  padding: 1.1rem 1.25rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.75rem;
+  background: #fff;
+}
+
+.cases-panel h2,
+.cases-panel h3 {
+  margin-top: 0;
+}
+
+.cases-panel form {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0.75rem 0;
+}
+
+.cases-panel label {
+  margin-top: 0.55rem;
+  font-weight: 650;
+}
+
+.cases-panel input {
+  min-height: 2.6rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid #64748b;
+  border-radius: 0.4rem;
+  font: inherit;
+}
+
+.cases-panel input:focus-visible,
+.cases-panel button:focus-visible,
+.cases-page a:focus-visible {
+  outline: 3px solid #1d4ed8;
+  outline-offset: 2px;
+}
+
+.cases-panel button {
+  justify-self: start;
+  min-height: 2.5rem;
+  padding: 0.45rem 0.9rem;
+  border: 1px solid #14532d;
+  border-radius: 0.4rem;
+  background: #166534;
+  color: #fff;
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.cases-panel button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.cases-list,
+.documents-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.cases-list li,
+.documents-list li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin: 0.5rem 0;
+  padding: 0.5rem;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.cases-list button {
+  background: #fff;
+  color: #14532d;
+}
+
+.cases-list button.cases-selected {
+  background: #dcfce7;
+  border-color: #166534;
+}
+
+.documents-list button {
+  background: #fff;
+  color: #14532d;
+}
+
+.cases-message {
+  margin: 1rem 0;
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+}
+
+.cases-message--status {
+  background: #dcfce7;
+  color: #14532d;
+}
+
+.cases-message--error {
+  background: #fee2e2;
+  color: #7f1d1d;
+}
+
+.cases-footer {
+  margin-top: 2rem;
+  border-top: 1px solid #cbd5e1;
+  padding-top: 1rem;
+  font-size: 0.9rem;
+  color: #475569;
+}
+
+@media (max-width: 36rem) {
+  .cases-page {
+    padding: 1.25rem 1rem 2rem;
+  }
+
+  .cases-panel {
+    padding: 0.9rem;
+  }
+
+  .cases-panel button {
+    width: 100%;
+    justify-self: stretch;
+  }
+
+  .documents-list li,
+  .cases-list li {
+    align-items: stretch;
+  }
+}
