@@ -133,21 +133,18 @@ describe('account lifecycle', () => {
     expect(replay.status).toBe(401);
   });
 
-  it('uses generic failures for duplicate/invalid registration and wrong/unknown credentials', async () => {
+  it('uses a uniform public outcome for valid new/duplicate registration and generic validation failures', async () => {
     const { app } = makeHarness();
     const agent = request.agent(app);
     const token = await csrf(agent);
 
-    expect(
-      (
-        await post(
-          agent,
-          '/api/auth/register',
-          { email: 'a@example.test', password: PASSWORD },
-          token,
-        )
-      ).status,
-    ).toBe(201);
+    const first = await post(
+      agent,
+      '/api/auth/register',
+      { email: 'a@example.test', password: PASSWORD },
+      token,
+    );
+    expect(first.status).toBe(201);
     const duplicate = await post(
       agent,
       '/api/auth/register',
@@ -160,9 +157,9 @@ describe('account lifecycle', () => {
       { email: 'not-an-email', password: PASSWORD },
       token,
     );
-    expect(duplicate.status).toBe(400);
+    expect(duplicate.status).toBe(first.status);
+    expect(duplicate.body).toEqual(first.body);
     expect(invalid.status).toBe(400);
-    expect(duplicate.body).toEqual(invalid.body);
     expect(JSON.stringify(duplicate.body)).not.toMatch(/exist|duplicate|email/i);
 
     const wrong = await post(
@@ -181,6 +178,68 @@ describe('account lifecycle', () => {
     expect(unknown.status).toBe(401);
     expect(wrong.body).toEqual(unknown.body);
     expect(JSON.stringify(wrong.body)).not.toMatch(/a@example|missing@example/i);
+  });
+
+  it('does not replace the existing password or create a second account on valid duplicate registration', async () => {
+    const { app, auth } = makeHarness();
+    const agent = request.agent(app);
+    const token = await csrf(agent);
+
+    const first = await post(
+      agent,
+      '/api/auth/register',
+      { email: 'keep@example.test', password: PASSWORD },
+      token,
+    );
+    expect(first.status).toBe(201);
+    const before = auth.accountStore.findByEmail('keep@example.test');
+    expect(before).not.toBeNull();
+
+    const duplicate = await post(
+      agent,
+      '/api/auth/register',
+      { email: 'KEEP@example.test', password: 'different fictional passphrase 2026' },
+      token,
+    );
+    expect(duplicate.status).toBe(201);
+    expect(duplicate.body).toEqual({ ok: true });
+    const after = auth.accountStore.findByEmail('keep@example.test');
+    expect(after?.id).toBe(before?.id);
+    expect(after?.passwordHash).toBe(before?.passwordHash);
+
+    const originalLogin = await post(
+      agent,
+      '/api/auth/login',
+      { email: 'keep@example.test', password: PASSWORD },
+      token,
+    );
+    expect(originalLogin.status).toBe(200);
+    const freshToken = (originalLogin.body as { csrfToken: string }).csrfToken;
+    expect(
+      (
+        await post(
+          agent,
+          '/api/auth/login',
+          { email: 'keep@example.test', password: 'different fictional passphrase 2026' },
+          freshToken,
+        )
+      ).status,
+    ).toBe(401);
+  });
+
+  it('rejects a well-formed identifier outside the fictional example.test namespace', async () => {
+    const { app } = makeHarness();
+    const agent = request.agent(app);
+    const token = await csrf(agent);
+
+    const response = await post(
+      agent,
+      '/api/auth/register',
+      { email: 'person@gmail.com', password: PASSWORD },
+      token,
+    );
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual({ error: 'invalid-request' });
   });
 
   it('keeps two independent fictional accounts isolated', async () => {
@@ -552,6 +611,7 @@ describe('session boundary', () => {
     );
     expect(limited.status).toBe(429);
     expect(limited.body).toEqual({ error: 'rate-limited' });
+    expect(limited.headers['retry-after']).toBe('3600');
   });
 });
 

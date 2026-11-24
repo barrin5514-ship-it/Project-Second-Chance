@@ -61,11 +61,11 @@ Demo password policy: minimum 15 characters, maximum 128 characters (no truncati
 - login per source IP: **20 per 15 minutes**;
 - registration per source IP: **5 per hour**.
 
-Keys do not reveal account existence; existing and nonexistent accounts receive the same 401/429 behavior. The in-memory store is window-bounded (expired entries reset), is local-only, and resets on restart; this is documented, not presented as distributed abuse protection. No permanent lockout.
+Keys do not reveal account existence; existing and nonexistent accounts receive the same 401/429 behavior for login. A valid-format registration returns the same **201 `{ok:true}`** whether the identifier is new or already exists; an existing password is never overwritten and no second row is created. Invalid syntax/policy still gets a generic 400, and genuine storage failure gets a generic 503. The remaining composed registration/login path can still disclose an existing identifier by whether a subsequent login succeeds, and there is no email ownership verification; this is an accepted residual limitation of the fictional demo, not a claim of complete non-enumeration. The in-memory store is window-bounded (expired entries reset), is local-only, and resets on restart; this is documented, not presented as distributed abuse protection. No permanent lockout.
 
 ### D7 — Secret and configuration handling
 
-- Session secret: 32 random bytes from `node:crypto`, generated once into `runtime/auth-session-secret` (ignored, chmod 600 where supported). No predictable fallback; unreadable/unwritable secret or DB fails startup closed.
+- Session secret: **48 random bytes** from `node:crypto`, generated once into `runtime/auth-session-secret` (ignored, chmod 600 where supported). No predictable fallback; unreadable/unwritable secret or DB fails startup closed.
 - Tests inject deterministic secrets/stores; no real `.env` values are read. Existing Nuance settings remain programmatically loaded and unrelated to auth.
 - Account UI copy says local fictional demo; no email delivery, ownership verification, recovery, MFA, OAuth or hosted security is claimed.
 
@@ -73,14 +73,16 @@ Keys do not reveal account existence; existing and nonexistent accounts receive 
 
 - `GET /api/auth/csrf`, `POST /api/auth/register`, `POST /api/auth/login`, `GET /api/auth/me`, `POST /api/auth/logout`.
 - `/account` page: labeled create-account and sign-in forms, autocomplete attributes, pending/generic-error/throttled states, signed-in email and logout; no credentials in URLs/localStorage. `/` keeps the fictional foundation notices and links to `/account`; `/mira` remains opt-in.
-- Registration creates the account but does not sign in; the user then signs in. This avoids an implicit identity transition and keeps the fixation test explicit.
+- The browser client applies a **10-second** budget to headers plus body parsing, cleans up its timer/abort controller, and never automatically replays a timed-out mutation. On a 401/403 or ambiguous timeout/store failure, the page re-queries authoritative `/me` and CSRF state; it clears the identity only when `/me` confirms no session, preserves a still-valid identity after CSRF/transient failures, and reports uncertainty instead of claiming logout or account creation.
+- Registration request creates a fictional account only when the identifier is new; a duplicate receives the same public `201 {ok:true}` without changing the existing password or creating another row. It never signs in the user; sign-in remains explicit. The user-facing copy is neutral because the public response does not distinguish a new account from an existing one.
 
 ## Consequences and open items
 
 - This proves account/session boundaries only. Per-resource case/document authorization, encryption, deletion/recovery, consent, legal/court features and hosting remain future gates.
 - Recovery is not implemented: a forgotten password has no reset path in this slice; the UI must say so honestly.
 - Rate limits are per-process memory and reset on restart; multi-process/hosted use needs a shared store.
-- No SMTP/email ownership verification; `@example.test` identifiers are fictional.
+- No SMTP/email ownership verification; `@example.test` identifiers are the only accepted namespace. Composed registration-plus-login can still reveal whether a well-formed fictional identifier exists; this residual is documented rather than hidden.
+- The account client uses an explicit **10-second** budget covering response headers and body parsing; a timed-out mutation is never automatically replayed, and the page reconciles `/me`/CSRF before changing identity.
 - `passport-local@1.0.0` is a small, stable strategy but its last release predates the other pins; it delegates credential checking to this application's Argon2id service. Independent review should confirm that tradeoff remains acceptable.
 - Session/account schema is initial; migrations/versioning will be needed before later private-data stories.
 - Independent Codex testing and actual Claude review are required before merge; this ADR is not a security certification.

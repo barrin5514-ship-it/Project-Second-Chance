@@ -12,7 +12,7 @@ async function createAccount(page: Page, email: string, password = PASSWORD): Pr
   await page.locator('#create-email').fill(email);
   await page.locator('#create-password').fill(password);
   await page.getByRole('button', { name: /create account/i }).click();
-  await expect(page.getByRole('status')).toContainText(/account created/i);
+  await expect(page.getByRole('status')).toContainText(/account request accepted/i);
   await expect(page.locator('#signin-email')).toHaveValue(email);
 }
 

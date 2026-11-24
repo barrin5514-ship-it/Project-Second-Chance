@@ -17,6 +17,9 @@ type Message = { kind: 'status' | 'error'; text: string } | null;
 
 function errorMessage(error: unknown): string {
   if (error instanceof AccountRequestError) {
+    if (error.status === 0) {
+      return 'The account request took too long or could not reach the server. Try again.';
+    }
     if (error.status === 429) {
       return 'Too many attempts. Wait a few minutes and try again.';
     }
@@ -34,6 +37,13 @@ function errorMessage(error: unknown): string {
     }
   }
   return 'The account action could not be completed. Try again.';
+}
+
+function needsAuthoritativeCheck(error: unknown): boolean {
+  return (
+    error instanceof AccountRequestError &&
+    (error.status === 0 || error.status === 403 || error.status >= 500)
+  );
 }
 
 /**
@@ -54,6 +64,18 @@ export default function AccountPage({ client = accountClient }: AccountPageProps
   const [signinEmail, setSigninEmail] = useState('');
   const [signinPassword, setSigninPassword] = useState('');
   const requestId = useRef(0);
+
+  async function readAuthoritativeAuth(): Promise<{
+    token: string;
+    user: AccountUser | null;
+  } | null> {
+    try {
+      const [token, currentUser] = await Promise.all([client.csrf(), client.me()]);
+      return { token, user: currentUser };
+    } catch {
+      return null;
+    }
+  }
 
   useEffect(() => {
     let active = true;
@@ -107,10 +129,30 @@ export default function AccountPage({ client = accountClient }: AccountPageProps
       setSigninEmail(email);
       setMessage({
         kind: 'status',
-        text: 'Account created. Sign in below with the same fictional email and passphrase.',
+        text: 'Account request accepted. If this fictional account is new, sign in below with the same email and passphrase.',
       });
     } catch (error) {
       if (requestId.current !== current) return;
+      if (needsAuthoritativeCheck(error)) {
+        const authoritative = await readAuthoritativeAuth();
+        if (requestId.current !== current) return;
+        if (authoritative !== null) {
+          setCsrfToken(authoritative.token);
+          if (authoritative.user !== null) {
+            setUser(authoritative.user);
+            setMessage({
+              kind: 'error',
+              text: 'The account request could not be confirmed, but your existing session is still active.',
+            });
+            return;
+          }
+        }
+        setMessage({
+          kind: 'error',
+          text: 'We could not confirm whether the account was created. Try signing in; if that fails, try again.',
+        });
+        return;
+      }
       setMessage({ kind: 'error', text: errorMessage(error) });
     } finally {
       if (requestId.current === current) setBusy(null);
@@ -137,6 +179,27 @@ export default function AccountPage({ client = accountClient }: AccountPageProps
       setMessage(null);
     } catch (error) {
       if (requestId.current !== current) return;
+      if (needsAuthoritativeCheck(error)) {
+        const authoritative = await readAuthoritativeAuth();
+        if (requestId.current !== current) return;
+        if (authoritative !== null) {
+          setCsrfToken(authoritative.token);
+          if (authoritative.user !== null) {
+            setUser(authoritative.user);
+            setSigninPassword('');
+            setMessage({
+              kind: 'status',
+              text: 'You are already signed in with the account shown above.',
+            });
+            return;
+          }
+        }
+        setMessage({
+          kind: 'error',
+          text: 'The sign-in could not be confirmed. Try again; your password has not been stored.',
+        });
+        return;
+      }
       setMessage({ kind: 'error', text: errorMessage(error) });
     } finally {
       if (requestId.current === current) setBusy(null);
@@ -172,7 +235,29 @@ export default function AccountPage({ client = accountClient }: AccountPageProps
       }
     } catch (error) {
       if (requestId.current !== current) return;
-      setMessage({ kind: 'error', text: errorMessage(error) });
+      const authoritative = await readAuthoritativeAuth();
+      if (requestId.current !== current) return;
+      if (authoritative === null) {
+        setMessage({
+          kind: 'error',
+          text: 'Sign out could not be confirmed. Check your connection and try again.',
+        });
+        return;
+      }
+
+      setCsrfToken(authoritative.token);
+      if (authoritative.user === null) {
+        setUser(null);
+        setCreateEmail('');
+        setSigninEmail('');
+        setMessage({ kind: 'error', text: 'Your session ended. Sign in again.' });
+      } else {
+        setUser(authoritative.user);
+        setMessage({
+          kind: 'error',
+          text: 'Sign out could not be confirmed. You may still be signed in; try again.',
+        });
+      }
     } finally {
       if (requestId.current === current) setBusy(null);
     }

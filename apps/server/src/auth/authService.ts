@@ -15,7 +15,7 @@ export class AuthValidationError extends Error {
 }
 
 export interface AuthService {
-  register(email: string, password: string): Promise<PublicUser>;
+  register(email: string, password: string): Promise<'created' | 'already-exists'>;
   authenticate(email: string, password: string): Promise<PublicUser | null>;
   findPublicById(id: string): PublicUser | null;
 }
@@ -25,10 +25,16 @@ export function toPublicUser(account: Account): PublicUser {
 }
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const FICTIONAL_EMAIL_DOMAIN = '@example.test';
 
 export function isValidEmail(value: string): boolean {
   const email = value.trim();
-  return email.length >= 3 && email.length <= 254 && EMAIL_PATTERN.test(email);
+  return (
+    email.length >= 3 &&
+    email.length <= 254 &&
+    EMAIL_PATTERN.test(email) &&
+    email.toLowerCase().endsWith(FICTIONAL_EMAIL_DOMAIN)
+  );
 }
 
 export function createAuthService(options: {
@@ -51,9 +57,10 @@ export function createAuthService(options: {
       if (policyError !== null) throw new AuthValidationError(policyError);
       const passwordHash = await hash(password);
       try {
-        return toPublicUser(accounts.create({ email, passwordHash }));
+        accounts.create({ email, passwordHash });
+        return 'created';
       } catch (error) {
-        if (error instanceof AccountExistsError) throw new AuthValidationError();
+        if (error instanceof AccountExistsError) return 'already-exists';
         throw error;
       }
     },

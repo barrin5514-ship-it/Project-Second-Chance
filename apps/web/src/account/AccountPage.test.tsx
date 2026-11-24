@@ -1,10 +1,18 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import AccountPage from './AccountPage';
-import { AccountRequestError, type AccountClient } from './accountClient';
+import { AccountRequestError, accountClient, ACCOUNT_REQUEST_BUDGET_MS, type AccountClient } from './accountClient';
 
 const PASSWORD = 'correct horse battery staple';
+const USER = { id: 'usr_demo', email: 'denise@example.test' };
+
+function json(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
 
 function makeClient(overrides: Partial<AccountClient> = {}): AccountClient {
   return {
@@ -21,6 +29,7 @@ function makeClient(overrides: Partial<AccountClient> = {}): AccountClient {
 }
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 
@@ -79,7 +88,7 @@ describe('account page', () => {
       (screen.getByLabelText('Password', { selector: '#create-password' }) as HTMLInputElement)
         .value,
     ).toBe('');
-    expect(screen.getByRole('status')).toHaveTextContent(/account created/i);
+    expect(screen.getByRole('status')).toHaveTextContent(/account request accepted/i);
     expect(
       (screen.getByLabelText('Email', { selector: '#signin-email' }) as HTMLInputElement).value,
     ).toBe('denise@example.test');
@@ -187,7 +196,7 @@ describe('account page', () => {
 
     await user.click(screen.getByRole('button', { name: /sign out/i }));
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(/unavailable/i);
+    expect(await screen.findByRole('alert')).toHaveTextContent(/could not be confirmed/i);
     expect(screen.getByRole('heading', { name: /you are signed in/i })).toBeInTheDocument();
     expect(screen.getByText('denise@example.test')).toBeInTheDocument();
   });
@@ -228,5 +237,209 @@ describe('account page', () => {
     resolveFirst({ user: { id: 'usr_a', email: 'stale@example.test' }, csrfToken: 'csrf-1' });
     await waitFor(() => expect(screen.queryByText('stale@example.test')).not.toBeInTheDocument());
     expect(screen.getByText('newer@example.test')).toBeInTheDocument();
+  });
+
+  it('bounds the real bootstrap request from headers through body and exposes Retry', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string, init?: RequestInit) => {
+        if (String(url).endsWith('/me')) return Promise.resolve(json({ error: 'unauthenticated' }, 401));
+        return new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () =>
+            reject(new DOMException('Aborted', 'AbortError')),
+          );
+        });
+      }),
+    );
+    render(<AccountPage client={accountClient} />);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(ACCOUNT_REQUEST_BUDGET_MS);
+    });
+
+    expect(screen.getByRole('button', { name: /retry loading the account page/i })).toBeInTheDocument();
+    expect(screen.queryByText(/loading account/i)).not.toBeInTheDocument();
+  });
+
+  it('recovers a timed-out sign-in to an actionable error and a usable button', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string, init?: RequestInit) => {
+        if (String(url).endsWith('/csrf')) return Promise.resolve(json({ csrfToken: 'csrf-1' }));
+        if (String(url).endsWith('/me')) return Promise.resolve(json({ error: 'unauthenticated' }, 401));
+        return new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () =>
+            reject(new DOMException('Aborted', 'AbortError')),
+          );
+        });
+      }),
+    );
+    render(<AccountPage client={accountClient} />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    fireEvent.change(screen.getByLabelText('Email', { selector: '#signin-email' }), {
+      target: { value: USER.email },
+    });
+    fireEvent.change(screen.getByLabelText('Password', { selector: '#signin-password' }), {
+      target: { value: PASSWORD },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /^Sign in$/ }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(ACCOUNT_REQUEST_BUDGET_MS);
+    });
+
+    expect(screen.getByRole('button', { name: /^Sign in$/ })).toBeEnabled();
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: /you are signed in/i })).not.toBeInTheDocument();
+  });
+
+  it('ignores a stale re-bootstrap response after the client changes', async () => {
+    const staleUser = { id: 'usr_a', email: 'stale-bootstrap@example.test' };
+    let resolveFirstToken!: (token: string) => void;
+    const firstClient = makeClient({
+      csrf: vi.fn(
+        () =>
+          new Promise<string>((resolve) => {
+            resolveFirstToken = resolve;
+          }),
+      ),
+      me: vi.fn(async () => staleUser),
+    });
+    const secondUser = { id: 'usr_b', email: 'second@example.test' };
+    const secondClient = makeClient({
+      csrf: vi.fn(async () => 'csrf-b'),
+      me: vi.fn(async () => secondUser),
+    });
+
+    const { rerender } = render(<AccountPage client={firstClient} />);
+    await waitFor(() => expect(firstClient.csrf).toHaveBeenCalled());
+    rerender(<AccountPage client={secondClient} />);
+    expect(await screen.findByText(secondUser.email, { exact: true })).toBeInTheDocument();
+
+    resolveFirstToken('csrf-a');
+    await waitFor(() => expect(screen.getByText(secondUser.email, { exact: true })).toBeInTheDocument());
+    expect(screen.queryByText(staleUser.email)).not.toBeInTheDocument();
+  });
+
+  it('keeps sign-in unavailable while sign-out is pending, then exposes it after completion', async () => {
+    let finishLogout!: () => void;
+    const client = makeClient({
+      me: vi.fn(async () => USER),
+      logout: vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            finishLogout = resolve;
+          }),
+      ),
+    });
+    const user = userEvent.setup();
+    render(<AccountPage client={client} />);
+    await screen.findByRole('heading', { name: /you are signed in/i });
+
+    await user.click(screen.getByRole('button', { name: /sign out/i }));
+    expect(screen.getByRole('button', { name: /signing out/i })).toBeDisabled();
+    expect(screen.queryByLabelText('Email', { selector: '#signin-email' })).not.toBeInTheDocument();
+
+    finishLogout();
+    expect(await screen.findByRole('heading', { name: /create a fictional account/i })).toBeInTheDocument();
+  });
+
+  it('reconciles an uncertain timed-out sign-in to the authoritative session when one exists', async () => {
+    vi.useFakeTimers();
+    let signedIn = false;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string, init?: RequestInit) => {
+        if (String(url).endsWith('/csrf')) return Promise.resolve(json({ csrfToken: 'csrf-1' }));
+        if (String(url).endsWith('/me')) {
+          return Promise.resolve(
+            signedIn ? json({ user: USER }) : json({ error: 'unauthenticated' }, 401),
+          );
+        }
+        return new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => {
+            signedIn = true;
+            reject(new DOMException('Aborted', 'AbortError'));
+          });
+        });
+      }),
+    );
+    render(<AccountPage client={accountClient} />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    fireEvent.change(screen.getByLabelText('Email', { selector: '#signin-email' }), {
+      target: { value: USER.email },
+    });
+    fireEvent.change(screen.getByLabelText('Password', { selector: '#signin-password' }), {
+      target: { value: PASSWORD },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /^Sign in$/ }));
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(ACCOUNT_REQUEST_BUDGET_MS);
+    });
+
+    expect(screen.getByRole('heading', { name: /you are signed in/i })).toBeInTheDocument();
+    expect(screen.getByText(USER.email, { exact: true })).toBeInTheDocument();
+  });
+
+  it('reconciles an expired-session logout instead of leaving a stale signed-in view', async () => {
+    let expired = false;
+    let csrfCalls = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string) => {
+        if (String(url).endsWith('/csrf')) {
+          csrfCalls += 1;
+          return Promise.resolve(json({ csrfToken: 'csrf-1' }));
+        }
+        if (String(url).endsWith('/me')) {
+          return Promise.resolve(
+            expired ? json({ error: 'unauthenticated' }, 401) : json({ user: USER }),
+          );
+        }
+        return Promise.resolve(json({ error: 'forbidden' }, 403));
+      }),
+    );
+    render(<AccountPage client={accountClient} />);
+    await screen.findByRole('heading', { name: /you are signed in/i });
+
+    expired = true;
+    fireEvent.click(screen.getByRole('button', { name: /^Sign out$/ }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/session ended|sign in again/i);
+    expect(screen.queryByRole('heading', { name: /you are signed in/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /create a fictional account/i })).toBeInTheDocument();
+    expect(csrfCalls).toBeGreaterThanOrEqual(2);
+  });
+
+  it('keeps a still-valid identity on a 403 logout and refreshes its CSRF state', async () => {
+    let csrfCalls = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string) => {
+        if (String(url).endsWith('/csrf')) {
+          csrfCalls += 1;
+          return Promise.resolve(json({ csrfToken: 'csrf-1' }));
+        }
+        if (String(url).endsWith('/me')) return Promise.resolve(json({ user: USER }));
+        return Promise.resolve(json({ error: 'forbidden' }, 403));
+      }),
+    );
+    render(<AccountPage client={accountClient} />);
+    await screen.findByRole('heading', { name: /you are signed in/i });
+
+    fireEvent.click(screen.getByRole('button', { name: /^Sign out$/ }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/could not be confirmed|try again/i);
+    expect(screen.getByRole('heading', { name: /you are signed in/i })).toBeInTheDocument();
+    expect(screen.getByText(USER.email, { exact: true })).toBeInTheDocument();
+    expect(csrfCalls).toBeGreaterThanOrEqual(2);
   });
 });

@@ -16,6 +16,9 @@ export interface AccountClient {
   logout(csrfToken: string): Promise<void>;
 }
 
+/** Budget covers response headers and the body read. */
+export const ACCOUNT_REQUEST_BUDGET_MS = 10_000;
+
 export class AccountRequestError extends Error {
   constructor(
     readonly status: number,
@@ -26,30 +29,75 @@ export class AccountRequestError extends Error {
   }
 }
 
-async function readJson(response: Response): Promise<Record<string, unknown>> {
+type JsonBody = Record<string, unknown>;
+
+function timeoutError(): AccountRequestError {
+  return new AccountRequestError(0, 'timeout');
+}
+
+async function withBudget<T>(operation: (signal: AbortSignal) => Promise<T>): Promise<T> {
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      reject(timeoutError());
+    }, ACCOUNT_REQUEST_BUDGET_MS);
+  });
+
   try {
-    const value: unknown = await response.json();
-    return typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : {};
-  } catch {
+    return await Promise.race([operation(controller.signal), timeout]);
+  } catch (error) {
+    if (error instanceof AccountRequestError) throw error;
+    throw new AccountRequestError(0, controller.signal.aborted ? 'timeout' : 'network-error');
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+    controller.abort();
+  }
+}
+
+async function readBody(response: Response): Promise<JsonBody> {
+  try {
+    const text = await response.text();
+    if (text.length === 0) return {};
+    const value: unknown = JSON.parse(text);
+    return typeof value === 'object' && value !== null ? (value as JsonBody) : {};
+  } catch (error) {
+    if (error instanceof AccountRequestError) throw error;
+    if ((error as { name?: unknown } | null)?.name === 'AbortError') throw timeoutError();
     return {};
   }
 }
 
-async function fail(response: Response): Promise<never> {
-  const body = await readJson(response);
+interface AccountResponse {
+  readonly response: Response;
+  readonly body: JsonBody;
+}
+
+async function request(path: string, init: RequestInit): Promise<AccountResponse> {
+  return withBudget(async (signal) => {
+    const response = await fetch(path, {
+      ...init,
+      credentials: 'same-origin',
+      cache: 'no-store',
+      signal,
+    });
+    const body = await readBody(response);
+    return { response, body };
+  });
+}
+
+function fail(response: Response, body: JsonBody): never {
   const code = typeof body['error'] === 'string' ? body['error'] : 'request-failed';
   throw new AccountRequestError(response.status, code);
 }
 
 async function getCsrf(): Promise<string> {
-  const response = await fetch('/api/auth/csrf', {
+  const { response, body } = await request('/api/auth/csrf', {
     method: 'GET',
-    credentials: 'same-origin',
-    cache: 'no-store',
     headers: { Accept: 'application/json' },
   });
-  if (!response.ok) return fail(response);
-  const body = await readJson(response);
+  if (!response.ok) fail(response, body);
   if (typeof body['csrfToken'] !== 'string' || body['csrfToken'].length === 0) {
     throw new AccountRequestError(response.status, 'invalid-csrf-response');
   }
@@ -57,15 +105,12 @@ async function getCsrf(): Promise<string> {
 }
 
 async function getMe(): Promise<AccountUser | null> {
-  const response = await fetch('/api/auth/me', {
+  const { response, body } = await request('/api/auth/me', {
     method: 'GET',
-    credentials: 'same-origin',
-    cache: 'no-store',
     headers: { Accept: 'application/json' },
   });
   if (response.status === 401) return null;
-  if (!response.ok) return fail(response);
-  const body = await readJson(response);
+  if (!response.ok) fail(response, body);
   const user = body['user'];
   if (
     typeof user !== 'object' ||
@@ -85,11 +130,9 @@ async function postJson(
   path: string,
   body: Record<string, string>,
   csrfToken: string,
-): Promise<Response> {
-  return fetch(path, {
+): Promise<AccountResponse> {
+  return request(path, {
     method: 'POST',
-    credentials: 'same-origin',
-    cache: 'no-store',
     headers: {
       Accept: 'application/json',
       'Content-Type': 'application/json',
@@ -100,14 +143,13 @@ async function postJson(
 }
 
 async function register(email: string, password: string, csrfToken: string): Promise<void> {
-  const response = await postJson('/api/auth/register', { email, password }, csrfToken);
-  if (!response.ok) return fail(response);
+  const { response, body } = await postJson('/api/auth/register', { email, password }, csrfToken);
+  if (!response.ok) fail(response, body);
 }
 
 async function login(email: string, password: string, csrfToken: string): Promise<LoginResult> {
-  const response = await postJson('/api/auth/login', { email, password }, csrfToken);
-  if (!response.ok) return fail(response);
-  const body = await readJson(response);
+  const { response, body } = await postJson('/api/auth/login', { email, password }, csrfToken);
+  if (!response.ok) fail(response, body);
   const user = body['user'];
   const freshToken = body['csrfToken'];
   if (
@@ -129,8 +171,8 @@ async function login(email: string, password: string, csrfToken: string): Promis
 }
 
 async function logout(csrfToken: string): Promise<void> {
-  const response = await postJson('/api/auth/logout', {}, csrfToken);
-  if (!response.ok) return fail(response);
+  const { response, body } = await postJson('/api/auth/logout', {}, csrfToken);
+  if (!response.ok) fail(response, body);
 }
 
 export const accountClient: AccountClient = {

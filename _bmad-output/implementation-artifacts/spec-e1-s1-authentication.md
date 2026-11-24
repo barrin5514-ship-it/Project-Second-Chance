@@ -85,7 +85,10 @@ context:
 
 - Chose `passport` + `passport-local` rather than a larger auth framework; `express-session` uses a small tested SQLite `Store` because `connect-sqlite3` pulled critical tar advisories and `better-sqlite3-session-store` is stale/GPL. Full rationale and rejected alternatives are in ADR-0002.
 - `better-sqlite3@13.2.0` requires Node >=22; `engines` was raised from >=20.12 to >=22.0.0 and the runtime remains Node 26.13.0.
-- Registration creates the account but does not sign in, avoiding an implicit identity transition; login rotates the session and CSRF token.
+- Registration now returns the same public `201 {ok:true}` for a valid new or duplicate identifier. A duplicate never overwrites the existing password or creates another row; invalid syntax/policy remains a generic 400; genuine storage failure remains 503. Invalid domains outside `@example.test` are rejected. Registration uses a separate 1-hour per-source window (login remains 15 minutes).
+- Registration creates an account when the identifier is new but does not sign in; login rotates the session and CSRF token.
+- The browser client applies a 10-second budget covering response headers **and** body parsing, with timer/abort cleanup. A timed-out mutation is not automatically replayed. On 401/403/ambiguous failures the page re-queries `/me` and CSRF; it clears identity only when `/me` confirms no session, preserves a still-valid identity, and reports uncertainty rather than claiming logout/account creation.
+- Stale bootstrap and action responses are ignored via effect cleanup/request generations; regression tests cover stale sign-in and stale re-bootstrap.
 - E2E starts the API with `PSC_E2E_NO_KEY=1` and `PSC_E2E_AUTH_RELAXED=1`; production throttling is covered by API tests, not the relaxed browser run.
 - The health route remains before auth session middleware; JSON parsing remains before health to preserve its parser-error contract.
 - No private-case/upload/consent/recovery/hosted code was added. `.vscode/` and all earlier evidence were preserved.
@@ -93,18 +96,20 @@ context:
 ## Spec Change Log
 
 - No scope change. The frozen intent's phrase "method" was implemented as explicit generic 405 responses for unsupported auth methods.
+- **Review correction (2026-11-24):** uniform valid-registration response, explicit 10-second header/body budget, authoritative session reconciliation, fictional-domain enforcement, and corrected registration-window/secret-size documentation. These are the bounded corrections requested by `docs/evidence/E1-S1-review-triage-13d5886.md`; no private-data or hosting scope was added.
 
 ## Review Triage Log
 
-- No independent review yet. Builder-only full-run regression: health parser-order test failed after initially mounting health before JSON parsing; route order corrected and the full suite re-ran green. Recorded in builder evidence.
+- Independent Codex testing and actual Claude review at `13d5886` required three P2 correction groups; fresh retest/follow-up is pending. The independent probes were preserved unchanged in `.setup/` and now pass 8/8. Builder-only full-run regression: health parser-order test failed after initially mounting health before JSON parsing; route order corrected and the full suite re-ran green. Recorded in builder evidence.
 
 ## Verification
 
-**Actual results (2026-11-24):**
-- `npm test` — **224 passed / 23 files, 0 failed**.
+**Actual results (2026-11-24, correction pass):**
+- `npm test` — **236 passed / 23 files, 0 failed**.
+- `npx vitest run --config .setup/vitest.codex-auth.config.ts` — **8 passed, 0 failed** (was 4 failed / 4 passed before corrections).
 - `npm run test:e2e` — **50 passed** (desktop + narrow).
 - `npm run typecheck` — exit 0.
 - `npm run build` — exit 0; existing SDK chunk-size warning only.
 - `npm run verify:secrets` — exit 0; `npm run test:secrets` — **7 passed**.
 - `npm audit --omit=dev` — **0 vulnerabilities**.
-- Independent Codex testing and actual Claude review remain **PENDING**; no merge, push or deployment.
+- Independent Codex retesting and actual Claude follow-up remain **PENDING**; no merge, push or deployment.

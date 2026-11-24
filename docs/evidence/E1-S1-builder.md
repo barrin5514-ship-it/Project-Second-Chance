@@ -1,6 +1,6 @@
 # E1-S1 builder evidence — fictional-demo authentication and sessions
 
-Builder: DeepSeek. Status: **IMPLEMENTED AND LOCALLY VERIFIED BY THE BUILDER — STOPPED FOR CODEX INDEPENDENT TESTING AND ACTUAL CLAUDE REVIEW.** This is builder evidence, not TDD theatre, not independent verification, not a security certification and not merge approval. No real records, uploads, private cases, hosted deployment, paid service, external message or live provider session was used. The real `.env` was not read or disclosed.
+Builder: DeepSeek. Status: **BOUNDED REVIEW CORRECTIONS APPLIED — STOPPED FOR FRESH CODEX RETESTING AND ACTUAL CLAUDE FOLLOW-UP.** This is builder evidence, not TDD theatre, not independent verification, not a security certification and not merge approval. No real records, uploads, private cases, hosted deployment, paid service, external message or live provider session was used. The real `.env` was not read or disclosed.
 
 ## Identity and base
 
@@ -52,7 +52,7 @@ The two corrected route tests were test-expectation corrections, not weakened sa
 
 | Command | Result |
 | --- | --- |
-| `npm test` | **224 tests / 23 files passed, 0 failed** (includes 43 new auth server tests, 9 account-page tests, 5 account-client tests) |
+| `npm test` | **236 tests / 23 files passed, 0 failed** (includes 45 new auth server tests, 16 account-page tests, 8 account-client tests) |
 | `npm run test:e2e` | **50 passed** (25 per desktop/narrow project): account lifecycle, reload persistence, two-account isolation, logout replay, no-CSRF rejection, narrow keyboard operation, no Nuance/external origin, foundation/Mira regressions |
 | `npm run typecheck` | exit 0, no diagnostics |
 | `npm run build` | exit 0; Vite built web assets (existing SDK chunk-size warning only) |
@@ -89,11 +89,37 @@ Regression found during the full run: moving health mounting after JSON parsing 
 - Sessions are persisted in `runtime/psc-auth.sqlite`; the session secret is generated into `runtime/auth-session-secret`. Both are git-ignored. A missing/too-short secret fails startup closed.
 - No real `.env` value was read; no secret or database was committed. `.vscode/` remains owner-local and was not staged.
 
+## Correction pass — review triage 13d5886
+
+The independent review found three P2 groups. Corrections were applied on top of `13d5886` with new maintained RED→GREEN tests; the independent probes in `.setup/` were not edited.
+
+| Correction | Maintained RED | Maintained GREEN |
+| --- | --- | --- |
+| Uniform valid registration outcome | new/duplicate/domain tests: **3 failed** (duplicate 400 vs 201; duplicate overwrite assertion; real-domain 201 vs 400) | auth routes **23 passed** |
+| Request budget covering headers/body, no replay | client timeout tests: **3 failed** (plus one unhandled rejection in the initial RED) | client **8 passed** |
+| Reconcile expired/ambiguous session state | account-page recovery tests: **4 failed** (bootstrap stall, sign-in stall, expired logout, 403 identity/token refresh) | account page **16 passed** |
+
+The initial client RED exposed an unhandled rejection because the test expectation was attached after timer advancement; the expectations were attached before advancement so the failure was behavioral, not an unhandled test artefact. After corrections, the unchanged independent probe config passed **8/8** (previously 4 failed / 4 passed). No independent probe was modified.
+
+Registration now returns the same `201 {ok:true}` for a valid new or duplicate `@example.test` identifier, never overwrites the existing hash or creates a second row, and retains generic 400 for invalid/policy failures and 503 for real storage failure. The remaining composed registration-plus-login disclosure limit is documented rather than claimed away. Registration uses a separate **1-hour** per-source window; login remains 15 minutes. The generated session secret is **48 random bytes** (ADR corrected from the stale 32-byte wording).
+
+The account client now has a **10-second** header+body budget with timer/abort cleanup, no mutation replay, and an actionable bootstrap retry. Expired/ambiguous logout or sign-in failures re-query `/me` and CSRF: `/me` 401 clears the stale identity; `/me` 200 preserves it; a failed reconcile preserves the identity and reports uncertainty. Genuine logout-store failures remain 503 on the server and are reconciled rather than blindly declared successful.
+
+Final correction evidence:
+- `npx vitest run --config .setup/vitest.codex-auth.config.ts` — **8 passed, 0 failed** (was 4 failed / 4 passed before correction).
+- `npm test` — **236 passed / 23 files, 0 failed**; `npm run typecheck` — exit 0.
+- `npm run test:e2e` — **50 passed**; `npm run build` — exit 0 (existing SDK chunk warning only).
+- `npm run verify:secrets` — exit 0; `npm run test:secrets` — 7/7; `npm audit --omit=dev` — 0 vulnerabilities; `git diff --check` — exit 0.
+- Independent probe files were not edited; SHA-256: `codex-auth-independent.test.tsx` `E27A1A3619683E78D441020D59D86DDF5D942E3D9F3380ED997D271C77970B44`, config `700FC50C94B42261BF3ECBC4019BB7ECF248EFFBD4860B188B7ECAA8ACDFCCAE`.
+- No merge, push, deployment, paid action, real records or live provider session. Fresh Codex retesting and actual Claude follow-up remain pending.
+
+
+
 ## Limitations and blockers for independent review
 
-1. **Independent gates not passed.** Codex testing and actual Claude review have not occurred for this slice. Builder tests do not replace them. No merge/push/deploy.
+1. **Independent gates not passed.** Codex and actual Claude reviewed `13d5886` and required the bounded corrections above; fresh Codex retesting and actual Claude follow-up are pending. Builder tests do not replace them. No merge/push/deploy.
 2. **Loopback HTTP only.** No TLS, Secure cookie, hosted deployment or production abuse protection. The in-memory rate limiter resets on restart and is per-process.
-3. **No password recovery/email verification/MFA/OAuth.** UI says so; no reset bypass exists.
+3. **No password recovery/email verification/MFA/OAuth.** UI says so; no reset bypass exists. Valid registration is uniform in its public response, but composed registration-plus-login can still disclose an existing fictional identifier; this residual is documented, not claimed away.
 4. **No per-resource authorization/encryption.** Two-account auth isolation is proven; future cases/documents/uploads remain unprotected until E1-S2/E1-S3 and their gates.
 5. **Argon2 parameters are an OWASP-baseline implementation choice**, not a measured hardware benchmark or independent cryptographic review.
 6. **SQLite is a local single-operator store**; schema migrations, backup/recovery and multi-process consistency remain future work (R19/R25).

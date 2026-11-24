@@ -29,6 +29,7 @@ export interface AuthOptions {
   absoluteTtlMs?: number;
   rateLimit?: {
     windowMs?: number;
+    registerWindowMs?: number;
     loginPerEmail?: number;
     loginPerIp?: number;
     registerPerIp?: number;
@@ -103,6 +104,7 @@ export function createAuth(options: AuthOptions): AuthDependencies {
   const now = options.now ?? Date.now;
   const cookieSecure = options.cookieSecure ?? false;
   const windowMs = options.rateLimit?.windowMs ?? DEFAULT_RATE_WINDOW_MS;
+  const registerWindowMs = options.rateLimit?.registerWindowMs ?? 60 * 60 * 1000;
   const loginPerEmail = options.rateLimit?.loginPerEmail ?? 5;
   const loginPerIp = options.rateLimit?.loginPerIp ?? 20;
   const registerPerIp = options.rateLimit?.registerPerIp ?? 5;
@@ -206,10 +208,12 @@ export function createAuth(options: AuthOptions): AuthDependencies {
     next();
   }
 
-  function rateLimited(_req: Request, res: Response): void {
-    res.setHeader('Retry-After', String(Math.max(1, Math.ceil(windowMs / 1000))));
-    res.setHeader('Cache-Control', 'no-store');
-    res.status(429).json({ error: 'rate-limited' });
+  function rateLimitedFor(window: number): (_req: Request, res: Response) => void {
+    return (_req, res) => {
+      res.setHeader('Retry-After', String(Math.max(1, Math.ceil(window / 1000))));
+      res.setHeader('Cache-Control', 'no-store');
+      res.status(429).json({ error: 'rate-limited' });
+    };
   }
 
   const loginEmailLimiter = rateLimit({
@@ -221,21 +225,21 @@ export function createAuth(options: AuthOptions): AuthDependencies {
       const email = normalizeEmail(readString(req.body, 'email') ?? '');
       return `login-email:${email}:${ipKeyGenerator(req.ip ?? 'unknown')}`;
     },
-    handler: rateLimited,
+    handler: rateLimitedFor(windowMs),
   });
   const loginIpLimiter = rateLimit({
     windowMs,
     limit: loginPerIp,
     standardHeaders: true,
     legacyHeaders: false,
-    handler: rateLimited,
+    handler: rateLimitedFor(windowMs),
   });
   const registerLimiter = rateLimit({
-    windowMs,
+    windowMs: registerWindowMs,
     limit: registerPerIp,
     standardHeaders: true,
     legacyHeaders: false,
-    handler: rateLimited,
+    handler: rateLimitedFor(registerWindowMs),
   });
 
   const router = Router();
