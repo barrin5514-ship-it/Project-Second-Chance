@@ -20,6 +20,10 @@ The next slice follows the existing approved delivery sequence: reconcile and co
 
 This folder is Project Second Chance, separate from DevSquadAI, CoachLab and brandon-portfolio. Do not edit those projects or alter global Git trust settings. Check the absolute path, existing files, Git ownership and working-tree state before changing anything. If an existing repository is discovered, preserve unrelated work.
 
+## Integration and next slice — November 23
+
+The owner explicitly approved local integration after fresh Codex retesting and actual Claude follow-up. Mira and E0-S1 are integrated on local `main` at `04a0fb8dcad1d539aaf44e56d28fe63d6e9d8dec`; `docs/evidence/E0-S1-merge-result.md` records the successful post-merge test. Older pending-merge and finish-E0-S1 instructions above are historical. The current branch `feature/e0-s2-source-readiness` is for the bounded investigation in `docs/stories/E0-S2-source-readiness.md`. Research permission is not permission for live court integration, real records, paid access or the next coding story. DeepSeek investigates; Codex verifies; actual Claude reviews; the owner approves its merge separately. Follow START_NEXT_BUILD.md's current section rather than replaying its historical handoff.
+
 ## Binding boundaries
 
 - Modular monolith; React, Vite, TypeScript, Node.js and Express; SQLite metadata with separately encrypted private documents.
