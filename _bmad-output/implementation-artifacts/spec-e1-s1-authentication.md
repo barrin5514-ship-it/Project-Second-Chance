@@ -88,7 +88,8 @@ context:
 - Registration now returns the same public `201 {ok:true}` for a valid new or duplicate identifier. A duplicate never overwrites the existing password or creates another row; invalid syntax/policy remains a generic 400; genuine storage failure remains 503. Invalid domains outside `@example.test` are rejected. Registration uses a separate 1-hour per-source window (login remains 15 minutes).
 - Registration creates an account when the identifier is new but does not sign in; login rotates the session and CSRF token.
 - The browser client applies a 10-second budget covering response headers **and** body parsing, with timer/abort cleanup. A timed-out mutation is not automatically replayed. On 401/403/ambiguous failures the page re-queries `/me` and CSRF; it clears identity only when `/me` confirms no session, preserves a still-valid identity, and reports uncertainty rather than claiming logout/account creation.
-- Stale bootstrap and action responses are ignored via effect cleanup/request generations; regression tests cover stale sign-in and stale re-bootstrap.
+- Initial bootstrap is single-flight per component client/attempt: StrictMode's development effect replay shares one CSRF/`me` promise, so only one cookieless CSRF response mints the cookie. Retry, client changes and identity transitions create fresh work; no global token cache is used. Separate tabs remain a documented fail-closed limitation.
+- Stale bootstrap and action responses are ignored via effect cleanup/request generations; regression tests cover stale sign-in, stale re-bootstrap, unmount, rejected-bootstrap Retry and post-logout token freshness.
 - E2E starts the API with `PSC_E2E_NO_KEY=1` and `PSC_E2E_AUTH_RELAXED=1`; production throttling is covered by API tests, not the relaxed browser run.
 - The health route remains before auth session middleware; JSON parsing remains before health to preserve its parser-error contract.
 - No private-case/upload/consent/recovery/hosted code was added. `.vscode/` and all earlier evidence were preserved.
@@ -97,16 +98,19 @@ context:
 
 - No scope change. The frozen intent's phrase "method" was implemented as explicit generic 405 responses for unsupported auth methods.
 - **Review correction (2026-11-24):** uniform valid-registration response, explicit 10-second header/body budget, authoritative session reconciliation, fictional-domain enforcement, and corrected registration-window/secret-size documentation. These are the bounded corrections requested by `docs/evidence/E1-S1-review-triage-13d5886.md`; no private-data or hosting scope was added.
+- **Follow-up correction (2026-11-24):** initial bootstrap is single-flight across StrictMode's effect replay; Retry/client change/identity transitions get fresh work; multi-tab limits documented. This is the bounded correction requested by `docs/evidence/E1-S1-followup-triage-926d565.md`; no server-check weakening or scope expansion.
 
 ## Review Triage Log
 
-- Independent Codex testing and actual Claude review at `13d5886` required three P2 correction groups; fresh retest/follow-up is pending. The independent probes were preserved unchanged in `.setup/` and now pass 8/8. Builder-only full-run regression: health parser-order test failed after initially mounting health before JSON parsing; route order corrected and the full suite re-ran green. Recorded in builder evidence.
+- Independent Codex testing and actual Claude review at `13d5886` required three P2 correction groups; those corrections were applied at `5786317`. Fresh retest at `926d565` found all three corrected but reproduced a new P2 bootstrap cookie/token race (F4); the independent probes were preserved unchanged in `.setup/` and the three original groups plus F4 now pass. Builder-only full-run regression: health parser-order test failed after initially mounting health before JSON parsing; route order corrected and the full suite re-ran green. Recorded in builder evidence.
 
 ## Verification
 
-**Actual results (2026-11-24, correction pass):**
-- `npm test` — **236 passed / 23 files, 0 failed**.
-- `npx vitest run --config .setup/vitest.codex-auth.config.ts` — **8 passed, 0 failed** (was 4 failed / 4 passed before corrections).
+**Actual results (2026-11-24, follow-up correction):**
+- `npm test` — **241 passed / 23 files, 0 failed**.
+- `npx vitest run --config .setup/vitest.codex-auth.config.ts` — **8 passed, 0 failed**.
+- Foundation/SDK/Mira preserved probes — **6 + 3 + 2 passed**.
+- `npx playwright test --config .setup/playwright.codex-auth-race.config.ts` — **1 passed** (`initialResponses:1`, token/cookie response 1, status 201; previously 2/403).
 - `npm run test:e2e` — **50 passed** (desktop + narrow).
 - `npm run typecheck` — exit 0.
 - `npm run build` — exit 0; existing SDK chunk-size warning only.

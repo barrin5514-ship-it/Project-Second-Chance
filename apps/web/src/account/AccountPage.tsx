@@ -64,6 +64,11 @@ export default function AccountPage({ client = accountClient }: AccountPageProps
   const [signinEmail, setSigninEmail] = useState('');
   const [signinPassword, setSigninPassword] = useState('');
   const requestId = useRef(0);
+  const bootstrapRef = useRef<{
+    client: AccountClient;
+    attempt: number;
+    promise: Promise<readonly [string, AccountUser | null]>;
+  } | null>(null);
 
   async function readAuthoritativeAuth(): Promise<{
     token: string;
@@ -81,7 +86,20 @@ export default function AccountPage({ client = accountClient }: AccountPageProps
     let active = true;
     setLoading(true);
     setLoadError(false);
-    Promise.all([client.csrf(), client.me()]).then(
+
+    // StrictMode replays this effect in development. Reuse one component-scoped
+    // bootstrap for the same client/attempt so only one cookieless CSRF request
+    // can mint a session; state guards alone cannot undo a stale Set-Cookie.
+    let entry = bootstrapRef.current;
+    if (entry === null || entry.client !== client || entry.attempt !== attempt) {
+      const promise = Promise.all([client.csrf(), client.me()]).then(
+        ([token, currentUser]) => [token, currentUser] as const,
+      );
+      entry = { client, attempt, promise };
+      bootstrapRef.current = entry;
+    }
+
+    entry.promise.then(
       ([token, currentUser]) => {
         if (!active) return;
         setCsrfToken(token);

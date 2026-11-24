@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { StrictMode } from 'react';
 import AccountPage from './AccountPage';
 import { AccountRequestError, accountClient, ACCOUNT_REQUEST_BUDGET_MS, type AccountClient } from './accountClient';
 
@@ -52,6 +53,115 @@ async function fillSignIn(
 }
 
 describe('account page', () => {
+  it('shares one initial CSRF request across the StrictMode effect replay', async () => {
+    const client = makeClient();
+    render(
+      <StrictMode>
+        <AccountPage client={client} />
+      </StrictMode>,
+    );
+
+    expect(await screen.findByRole('heading', { name: /create a fictional account/i })).toBeInTheDocument();
+    expect(client.csrf).toHaveBeenCalledTimes(1);
+    expect(client.me).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses a fresh CSRF token after logout rather than the bootstrap result', async () => {
+    const csrf = vi
+      .fn()
+      .mockResolvedValueOnce('csrf-bootstrap')
+      .mockResolvedValueOnce('csrf-after-logout');
+    const client = makeClient({
+      csrf,
+      me: vi.fn(async () => USER),
+    });
+    const user = userEvent.setup();
+    render(<AccountPage client={client} />);
+    await screen.findByRole('heading', { name: /you are signed in/i });
+
+    await user.click(screen.getByRole('button', { name: /sign out/i }));
+    expect(await screen.findByRole('heading', { name: /create a fictional account/i })).toBeInTheDocument();
+    expect(csrf).toHaveBeenCalledTimes(2);
+
+    await fillSignIn(user, USER.email);
+    await user.click(screen.getByRole('button', { name: /^sign in$/i }));
+    expect(client.login).toHaveBeenCalledWith(USER.email, PASSWORD, 'csrf-after-logout');
+  });
+
+  it('re-runs bootstrap only after Retry and does not cache the rejected attempt', async () => {
+    let first = true;
+    const client = makeClient({
+      csrf: vi.fn(async () => {
+        if (first) {
+          first = false;
+          throw new AccountRequestError(503, 'unavailable');
+        }
+        return 'csrf-retry';
+      }),
+      me: vi.fn(async () => null),
+    });
+    render(
+      <StrictMode>
+        <AccountPage client={client} />
+      </StrictMode>,
+    );
+
+    expect(await screen.findByRole('button', { name: /retry loading the account page/i })).toBeInTheDocument();
+    expect(client.csrf).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole('button', { name: /retry loading the account page/i }));
+    expect(await screen.findByRole('heading', { name: /create a fictional account/i })).toBeInTheDocument();
+    expect(client.csrf).toHaveBeenCalledTimes(2);
+  });
+
+  it('shares one delayed initial CSRF request across the StrictMode replay', async () => {
+    let resolveToken!: (token: string) => void;
+    const client = makeClient({
+      csrf: vi.fn(
+        () =>
+          new Promise<string>((resolve) => {
+            resolveToken = resolve;
+          }),
+      ),
+      me: vi.fn(async () => null),
+    });
+    render(
+      <StrictMode>
+        <AccountPage client={client} />
+      </StrictMode>,
+    );
+
+    await waitFor(() => expect(client.csrf).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      resolveToken('csrf-delayed');
+      await Promise.resolve();
+    });
+    expect(await screen.findByRole('heading', { name: /create a fictional account/i })).toBeInTheDocument();
+    expect(client.csrf).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not update an unmounted account page when bootstrap resolves late', async () => {
+    let resolveToken!: (token: string) => void;
+    const client = makeClient({
+      csrf: vi.fn(
+        () =>
+          new Promise<string>((resolve) => {
+            resolveToken = resolve;
+          }),
+      ),
+      me: vi.fn(async () => null),
+    });
+    const { unmount, container } = render(<AccountPage client={client} />);
+    await waitFor(() => expect(client.csrf).toHaveBeenCalledTimes(1));
+    unmount();
+
+    await act(async () => {
+      resolveToken('csrf-late');
+      await Promise.resolve();
+    });
+    expect(container).toBeEmptyDOMElement();
+  });
+
   it('offers labeled create-account and sign-in forms for signed-out visitors', async () => {
     const client = {
       csrf: vi.fn(async () => 'csrf-1'),
