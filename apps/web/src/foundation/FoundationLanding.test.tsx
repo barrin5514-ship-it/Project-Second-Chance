@@ -30,14 +30,18 @@ describe('foundation landing', () => {
     expect(screen.getByText('Fictional data only')).toBeInTheDocument();
     expect(
       screen.getByText(
-        'Development foundation — accounts and protected uploads are not available yet.',
+        'Local fictional-data foundation — demo accounts are available; protected uploads are not.',
       ),
     ).toBeInTheDocument();
     // No False Hope: information, not advice and not eligibility decisions.
     expect(screen.getByRole('main')).toHaveTextContent(/legal information, not legal advice/i);
     expect(screen.getByRole('main')).toHaveTextContent(/does not decide eligibility/i);
-    // No sign-in, upload or sensitive-input form is active.
+    // The landing stays form-free; account forms live on /account.
     expect(container.querySelector('form, input, textarea, select')).toBeNull();
+    expect(screen.getByRole('link', { name: /create a fictional account/i })).toHaveAttribute(
+      'href',
+      '/account',
+    );
     // Mira stays available only as an explicit optional connection test.
     expect(screen.getByRole('link', { name: /mira/i })).toHaveAttribute('href', '/mira');
   });

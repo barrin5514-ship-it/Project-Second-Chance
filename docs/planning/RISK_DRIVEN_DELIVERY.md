@@ -4,6 +4,8 @@ Updated November 20, 2026. The owner selected stable BMAD v6.12 and mandatory te
 
 ## Gate zero before foundation code
 
+Current position — November 24, 2026: Mira/E0-S1 and E0-S2 are merged locally following owner approval. E1-S1 authentication was implemented and reviewed at `13d5886`; the bounded P2 corrections (uniform valid registration, 10-second header/body request budget with session reconciliation, fictional-domain enforcement) and the follow-up StrictMode bootstrap single-flight correction are applied with **241 unit/API/component tests**, **50 browser tests**, the preserved independent probes passing **8/8 auth + 11 foundation/Mira**, and the delayed-cookie race probe passing **1/1**. It is **stopped for fresh Codex and Claude verification**, with no merge approval. E1-S2 private cases/encrypted documents remains the next slice only after those gates and the owner's separate merge decision. This does not mark future controls complete or approve hosted authentication. DeepSeek uses the installed stable BMAD workflow, Codex tests independently, actual Claude reviews and owner approves the next merge. No return to foundation installation or full-MVP unattended run is required.
+
 Verify workspace/Git state and official BMAD 6.12.4 installation/version as described in `../process/BMAD_STABLE_TDD.md`. Confirm required tools and actual installed workflow availability in Continue. Verify disposable-file write/read/cleanup in this exact folder without touching other projects. Load approved artifacts without overwriting them. Map E0-S1 acceptance criteria to risks and tests. Report a genuine version/setup blocker rather than silently selecting another framework. R09/R10/R23/R24/R25.
 
 ## Delivery order and tests before capability activation

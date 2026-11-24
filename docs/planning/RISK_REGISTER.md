@@ -41,6 +41,20 @@ Authority: `docs/product/approved-product-baseline-v1.1.md` section 8, `docs/pro
 
 ## Updating the register
 
+Current delivery update — November 24, 2026: E0-S2 at `295d413` passed fresh Codex re-verification and actual Claude follow-up. The owner approved local main merge `c2a1dca`; see `../evidence/E0-S2-merge-result.md`. Research does not mitigate future legal/court access risks or authorize real records. E1-S1 now investigates/implements R05/R11/R23 with R07/R09/R10/R20/R21/R24/R25 as supporting boundaries; all authentication-specific controls remain **OPEN** until tested and independently reviewed. See `../stories/E1-S1-authentication.md`. Existing foundation-scoped results and deferred research P3 notes remain historical evidence, not guarantees for new code.
+
+## E1-S1 authentication evidence update — 2026-11-24
+
+Builder evidence: `../evidence/E1-S1-builder.md`; correction record: `../evidence/E1-S1-correction-13d5886.md`; spec: `../../_bmad-output/implementation-artifacts/spec-e1-s1-authentication.md`; ADR: `../adr/0002-authentication-and-sessions.md`; threat model: `../security/threat-model.md`. Builder ran **241 unit/API/component tests (23 files, 0 failed)** plus **50 Playwright browser tests**, typecheck, production build, secrets checks and `npm audit --omit=dev` (**0 vulnerabilities**). Actual RED/GREEN sequences are in the builder evidence; these are builder results, not independent verification.
+
+- **R11 (custom/weak auth, CSRF/session compromise):** local controls implemented for this slice — Passport local authentication, Argon2id, SQLite sessions, HttpOnly/SameSite cookies, server expiry/absolute lifetime, Passport login regeneration, logout destruction, `csrf-sync` synchronizer tokens, exact-Origin POST checks, generic failures, uniform valid-registration responses, single-flight initial bootstrap (StrictMode-safe), a 10-second client request budget/recovery and per-identifier/source rate limits — with negative-path tests. **AWAITING INDEPENDENT VERIFICATION; not closed or self-certified.** Residual limits: loopback HTTP has no `Secure` cookie/TLS; rate limits are per-process memory; no recovery/email/MFA/OAuth; composed registration-plus-login can still disclose an existing fictional identifier; separate tabs are outside the component-scoped bootstrap single-flight.
+- **R05 (per-resource authorization):** the account boundary is tested (two accounts, no user list, caller-supplied ids ignored), but **OPEN** for future cases/documents/uploads; no per-resource owner enforcement exists yet.
+- **R23 (honest evidence):** RED/GREEN/full-check evidence recorded, including the initial UI assertion mismatch, the parser-order regression and the bounded P2 corrections found by independent review; the preserved independent probes now pass **8/8**. **AWAITING INDEPENDENT VERIFICATION**.
+- **Supporting boundaries:** R07 outage/failure states, R09 dependency/supply chain, R10 framework/runtime, R20 test honesty, R24 scope and R25 write-failure behavior have local evidence only and remain **AWAITING INDEPENDENT VERIFICATION** where they apply to this slice.
+- **Not activated / still OPEN:** R12/R13 private-document encryption/upload, R15 AI consent, R16 prompt injection, R19 backup/recovery, R21 hosted/TLS, R08 real-record use, R01–R03 court access, R04 legal review. E1-S1 does not authorize real records or hosted access.
+
+No risk is closed by E1-S1. Codex independent testing and actual Claude review are pending; no merge, push or deployment occurred.
+
 At every story start, select applicable IDs and required tests; do not reopen settled architecture without a concrete conflict. At story end, link actual evidence and residual exposure, with status and date. DeepSeek can mark AWAITING INDEPENDENT VERIFICATION, not self-certify independent mitigation. Codex and Claude report their actual checks; the owner accepts residual nonblocking risk explicitly. A failure on a required safety gate blocks the affected capability and merge; a future risk not activated in the current story stays OPEN rather than blocking unrelated foundation work.
 
 ## E0-S1 evidence update — 2026-11-23

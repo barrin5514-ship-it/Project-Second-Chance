@@ -48,9 +48,20 @@ export default function FoundationLanding({
         <p className="foundation-banner">Fictional data only</p>
         <h1>Project Second Chance</h1>
         <p className="foundation-subtitle">
-          Development foundation — accounts and protected uploads are not available yet.
+          Local fictional-data foundation — demo accounts are available; protected uploads are not.
         </p>
       </header>
+
+      <section aria-labelledby="foundation-account-heading" className="foundation-panel">
+        <h2 id="foundation-account-heading">Demo accounts</h2>
+        <p>
+          Create a fictional account or sign in to test the identity boundary. Use an @example.test
+          address; no email is sent and there is no password recovery in this slice.
+        </p>
+        <p>
+          <a href="/account">Create a fictional account or sign in</a>
+        </p>
+      </section>
 
       <section aria-labelledby="foundation-status-heading" className="foundation-panel">
         <h2 id="foundation-status-heading">Local API status</h2>
@@ -73,11 +84,11 @@ export default function FoundationLanding({
       </section>
 
       <section aria-labelledby="foundation-not-ready-heading" className="foundation-panel">
-        <h2 id="foundation-not-ready-heading">Not available in this foundation</h2>
+        <h2 id="foundation-not-ready-heading">Not available in this slice</h2>
         <p>
-          Accounts, sign-in, private cases, protected uploads and any sending or filing are not
-          available yet. There is no form on this page, and the health check makes no external
-          model or court request.
+          Private cases, protected uploads, legal analysis and any sending or filing are not
+          available yet. There is no form on this page, and the health check makes no external model
+          or court request.
         </p>
       </section>
 

@@ -1,6 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import FoundationLanding from './foundation/FoundationLanding';
+import AccountPage from './account/AccountPage';
 import './styles.css';
 
 const container = document.getElementById('root');
@@ -9,7 +10,13 @@ if (container === null) throw new Error('Missing #root');
 const root = createRoot(container);
 const path = window.location.pathname.replace(/\/+$/, '');
 
-if (path === '/mira') {
+if (path === '/account') {
+  root.render(
+    <StrictMode>
+      <AccountPage />
+    </StrictMode>,
+  );
+} else if (path === '/mira') {
   // The separately approved Mira connection test is opt-in: load its page and
   // the provider SDK only here, never on the foundation landing.
   void Promise.all([import('./App'), import('./avatar/sdk'), import('@nuancelabs/js-sdk')])
