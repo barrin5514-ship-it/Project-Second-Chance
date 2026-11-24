@@ -41,6 +41,8 @@ Authority: `docs/product/approved-product-baseline-v1.1.md` section 8, `docs/pro
 
 ## Updating the register
 
+**Latest integration/activation boundary — November 24, 2026:** E1-S1 passed fresh Codex and actual Claude verification at `62c2b82`, then owner-approved local merge `e2edea5` passed 241 tests; see `../evidence/E1-S1-merge-result.md`. Earlier pending-authentication-review/merge labels are historical. R11 is mitigated only in the tested local authentication scope; future resource authorization and hosted controls are not evidenced. E1-S2 now targets R05/R12/R13/R19/R23/R25 with R07/R09/R10/R11/R20/R21/R22/R24 supporting boundaries. Private storage, keys, uploads, failure cleanup and recovery risks remain **OPEN** until that slice supplies actual evidence. See `../stories/E1-S2-private-cases-encrypted-documents.md`. E1-S3 full retention/backup restore and all later activation gates remain OPEN.
+
 Current delivery update — November 24, 2026: E0-S2 at `295d413` passed fresh Codex re-verification and actual Claude follow-up. The owner approved local main merge `c2a1dca`; see `../evidence/E0-S2-merge-result.md`. Research does not mitigate future legal/court access risks or authorize real records. E1-S1 now investigates/implements R05/R11/R23 with R07/R09/R10/R20/R21/R24/R25 as supporting boundaries; all authentication-specific controls remain **OPEN** until tested and independently reviewed. See `../stories/E1-S1-authentication.md`. Existing foundation-scoped results and deferred research P3 notes remain historical evidence, not guarantees for new code.
 
 ## E1-S1 authentication evidence update — 2026-11-24

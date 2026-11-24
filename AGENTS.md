@@ -28,6 +28,10 @@ The owner explicitly approved local integration after fresh Codex retesting and 
 
 The owner explicitly approved E0-S2's local merge after fresh Codex verification and actual Claude follow-up. Main is now `c2a1dca28fd295a1a71d20f5e1e2e230edbfdb13`; see `docs/evidence/E0-S2-merge-result.md`. The historical next-target/pending-merge statements above are superseded. Current next work is `docs/stories/E1-S1-authentication.md` on `feature/e1-s1-authentication`: refine the existing authentication/session slice through installed stable BMAD 6.12.4 and mandatory TDD, then stop at independent gates. Preserve Mira and health. This slice permits fictional-demo accounts only, not protected cases/uploads, hosted access, live court/provider work or a new merge. Read the current START_NEXT_BUILD.md; no Codex-written application implementation is authorized in place of DeepSeek.
 
+## Latest delivery target — E1-S2, November 24
+
+The owner explicitly approved the verified authentication merge. Local main is now `e2edea5a11ba250b881449acaa951844e38abba0`; the maintained suite passed 241 tests on the merged tree. See `docs/evidence/E1-S1-merge-result.md`. Earlier next-target/pending-merge instructions above are historical. Current target is `docs/stories/E1-S2-private-cases-encrypted-documents.md` on `feature/e1-s2-private-documents`: use installed stable BMAD 6.12.4 to refine the bounded private-case/encrypted-document spec and ADRs before TDD implementation. Exact key/recovery, upload-format/limit and retention decisions remain proposals requiring their existing review gates. Fictional only; no extraction/AI/legal/court/hosted activation. Preserve authentication, health and optional Mira. DeepSeek implements; Codex tests; actual Claude reviews; owner approves E1-S2's merge separately. This handoff authorizes no Codex-written application replacement, key generation or real-record processing.
+
 ## Binding boundaries
 
 - Modular monolith; React, Vite, TypeScript, Node.js and Express; SQLite metadata with separately encrypted private documents.
