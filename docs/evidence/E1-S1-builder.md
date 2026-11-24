@@ -2,6 +2,8 @@
 
 Builder: DeepSeek. Status: **BOUNDED REVIEW CORRECTIONS APPLIED — STOPPED FOR FRESH CODEX RETESTING AND ACTUAL CLAUDE FOLLOW-UP.** This is builder evidence, not TDD theatre, not independent verification, not a security certification and not merge approval. No real records, uploads, private cases, hosted deployment, paid service, external message or live provider session was used. The real `.env` was not read or disclosed.
 
+Correction record: `docs/evidence/E1-S1-correction-13d5886.md` (correction commit `5786317`).
+
 ## Identity and base
 
 - Story: `docs/stories/E1-S1-authentication.md`; branch `feature/e1-s1-authentication`; base local `main` `c2a1dca28fd295a1a71d20f5e1e2e230edbfdb13` (merge of approved E0-S2 research). Build date 2026-11-24 (America/New_York).
