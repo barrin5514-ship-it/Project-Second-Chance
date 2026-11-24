@@ -41,6 +41,8 @@ Authority: `docs/product/approved-product-baseline-v1.1.md` section 8, `docs/pro
 
 ## Updating the register
 
+Current delivery update — November 24, 2026: E0-S2 at `295d413` passed fresh Codex re-verification and actual Claude follow-up. The owner approved local main merge `c2a1dca`; see `../evidence/E0-S2-merge-result.md`. Research does not mitigate future legal/court access risks or authorize real records. E1-S1 now investigates/implements R05/R11/R23 with R07/R09/R10/R20/R21/R24/R25 as supporting boundaries; all authentication-specific controls remain **OPEN** until tested and independently reviewed. See `../stories/E1-S1-authentication.md`. Existing foundation-scoped results and deferred research P3 notes remain historical evidence, not guarantees for new code.
+
 At every story start, select applicable IDs and required tests; do not reopen settled architecture without a concrete conflict. At story end, link actual evidence and residual exposure, with status and date. DeepSeek can mark AWAITING INDEPENDENT VERIFICATION, not self-certify independent mitigation. Codex and Claude report their actual checks; the owner accepts residual nonblocking risk explicitly. A failure on a required safety gate blocks the affected capability and merge; a future risk not activated in the current story stays OPEN rather than blocking unrelated foundation work.
 
 ## E0-S1 evidence update — 2026-11-23

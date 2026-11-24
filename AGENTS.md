@@ -24,6 +24,10 @@ This folder is Project Second Chance, separate from DevSquadAI, CoachLab and bra
 
 The owner explicitly approved local integration after fresh Codex retesting and actual Claude follow-up. Mira and E0-S1 are integrated on local `main` at `04a0fb8dcad1d539aaf44e56d28fe63d6e9d8dec`; `docs/evidence/E0-S1-merge-result.md` records the successful post-merge test. Older pending-merge and finish-E0-S1 instructions above are historical. The current branch `feature/e0-s2-source-readiness` is for the bounded investigation in `docs/stories/E0-S2-source-readiness.md`. Research permission is not permission for live court integration, real records, paid access or the next coding story. DeepSeek investigates; Codex verifies; actual Claude reviews; the owner approves its merge separately. Follow START_NEXT_BUILD.md's current section rather than replaying its historical handoff.
 
+## Current delivery update — November 24
+
+The owner explicitly approved E0-S2's local merge after fresh Codex verification and actual Claude follow-up. Main is now `c2a1dca28fd295a1a71d20f5e1e2e230edbfdb13`; see `docs/evidence/E0-S2-merge-result.md`. The historical next-target/pending-merge statements above are superseded. Current next work is `docs/stories/E1-S1-authentication.md` on `feature/e1-s1-authentication`: refine the existing authentication/session slice through installed stable BMAD 6.12.4 and mandatory TDD, then stop at independent gates. Preserve Mira and health. This slice permits fictional-demo accounts only, not protected cases/uploads, hosted access, live court/provider work or a new merge. Read the current START_NEXT_BUILD.md; no Codex-written application implementation is authorized in place of DeepSeek.
+
 ## Binding boundaries
 
 - Modular monolith; React, Vite, TypeScript, Node.js and Express; SQLite metadata with separately encrypted private documents.
