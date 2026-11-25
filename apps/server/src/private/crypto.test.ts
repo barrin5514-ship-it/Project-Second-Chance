@@ -89,6 +89,22 @@ describe('private envelope crypto', () => {
     expect(() => loadOrCreateMasterKey(tempDir(), { allowCreate: false })).toThrow(/key|missing/i);
   });
 
+  it('never overwrites an existing published key during a concurrent/first-start path', () => {
+    const dir = tempDir();
+    const first = loadOrCreateMasterKey(dir, { allowCreate: true });
+    const second = loadOrCreateMasterKey(dir, { allowCreate: true });
+    expect(second.keyId).toBe(first.keyId);
+    expect(second.key.equals(first.key)).toBe(true);
+    const raw = readFileSync(join(dir, 'master-key.json'), 'utf8');
+    expect(raw).toContain(first.keyId);
+  });
+
+  it('fails closed when a partial/corrupt key file is present', () => {
+    const dir = tempDir();
+    writeFileSync(join(dir, 'master-key.json'), '{"version":1,"keyId":"abc"');
+    expect(() => loadOrCreateMasterKey(dir, { allowCreate: true })).toThrow(/key|format/i);
+  });
+
   it('keeps key material out of the database-facing key object and files are not world-readable where supported', () => {
     const dir = tempDir();
     const master = loadOrCreateMasterKey(dir, { allowCreate: true });

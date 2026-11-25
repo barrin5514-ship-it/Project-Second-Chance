@@ -1,7 +1,7 @@
 import { crc32 } from 'node:zlib';
 import { fileTypeFromBuffer } from 'file-type';
 import { imageSize } from 'image-size';
-import { PDFDocument } from 'pdf-lib';
+import { validatePdfInWorker } from './pdfValidation';
 
 export const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 export const MAX_PDF_PAGES = 50;
@@ -34,7 +34,17 @@ const ALLOWED = new Map<string, AllowedType>([
   ['jpg', { mimeType: 'image/jpeg', extension: 'jpg', suffixes: ['.jpg', '.jpeg'] }],
 ]);
 
-const PDF_TRAILER_WINDOW = 1024;
+const PDF_WHITESPACE = new Set([0x09, 0x0a, 0x0c, 0x0d, 0x20]);
+
+function hasOnlyPdfTrailingWhitespace(buffer: Buffer): boolean {
+  const marker = Buffer.from('%%EOF');
+  const index = buffer.lastIndexOf(marker);
+  if (index < 0) return false;
+  for (const byte of buffer.subarray(index + marker.length)) {
+    if (byte !== 0x00 && !PDF_WHITESPACE.has(byte)) return false;
+  }
+  return true;
+}
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
 // The parsers below only read headers (images) or recover from damage (PDF), so
@@ -101,7 +111,7 @@ function validateFilename(name: string): void {
   if (name !== name.normalize('NFC')) throw new UploadValidationError('invalid');
   if (/[\u0000-\u001f\u007f-\u009f]/.test(name)) throw new UploadValidationError('invalid');
   // Direction overrides can make "gpj.exe" display as "exe.jpg".
-  if (/[‎‏‪-‮⁦-⁩]/.test(name)) {
+  if (/[\u200e\u200f\u202a-\u202e\u2066-\u2069]/.test(name)) {
     throw new UploadValidationError('invalid');
   }
   if (/[\\/]/.test(name)) throw new UploadValidationError('invalid');
@@ -135,16 +145,13 @@ export async function validateUpload(input: {
 
   try {
     if (allowed.extension === 'pdf') {
-      if (!input.buffer.subarray(-PDF_TRAILER_WINDOW).includes('%%EOF')) {
+      if (!hasOnlyPdfTrailingWhitespace(input.buffer)) {
         throw new UploadValidationError('invalid');
       }
-      const document = await PDFDocument.load(input.buffer, {
-        ignoreEncryption: false,
-        updateMetadata: false,
-      });
-      if (document.isEncrypted) throw new UploadValidationError('invalid');
-      const pages = document.getPageCount();
-      if (pages < 1 || pages > MAX_PDF_PAGES) throw new UploadValidationError('invalid');
+      const result = await validatePdfInWorker(input.buffer);
+      if (result.pages < 1 || result.pages > MAX_PDF_PAGES) {
+        throw new UploadValidationError('invalid');
+      }
     } else {
       const complete = allowed.extension === 'png' ? isCompletePng : isCompleteJpeg;
       if (!complete(input.buffer)) throw new UploadValidationError('invalid');

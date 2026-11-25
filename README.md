@@ -5,9 +5,9 @@ Local, fictional-data foundation for a legal-information and reentry-assistance 
 ## What exists
 
 - A responsive landing page at `/` with the fictional-data notices, a same-origin API status check that times out after 8 seconds, a keyboard-operable retry, and a link to the account page.
-- `GET /api/health`, which returns exactly `{"status":"ok","mode":"fictional-demo"}` (HTTP 200, JSON) and reads no configuration, provider or user data.
+- `GET /api/health`, which returns exactly `{"status":"ok","mode":"fictional-demo"}` (HTTP 200, JSON) and reads no configuration, provider or user data. This is a liveness contract only. `GET /api/ready` distinguishes readiness: private-storage initialization failure returns HTTP 503 with a generic JSON body while auth/health remain live.
 - Fictional-demo account creation, sign-in, current-account state and sign-out at `/account`, backed by Passport local authentication, Argon2id (`@node-rs/argon2`), SQLite (`better-sqlite3`), `express-session`, `csrf-sync` and per-identifier/source rate limits. No email is sent and there is no password recovery.
-- Owner-isolated private cases and encrypted documents at `/cases`: case create/list/read/edit/live-delete, validated PDF/PNG/JPEG upload (5 MiB, structural/page/dimension limits), authenticated-encrypted blobs and metadata, integrity-checked download and confirmed deletion. Keys live outside the DB/blobs under `runtime/keys`; blobs under `runtime/private`.
+- Owner-isolated private cases and encrypted documents at `/cases`: case create/list/read/edit/live-delete, validated PDF/PNG/JPEG upload (5 MiB, structural/page/dimension limits), authenticated-encrypted blobs and metadata, integrity-checked download and confirmed deletion. PDF parsing is worker-isolated with a 64 MiB cap and 3-second deadline. Keys live outside the DB/blobs under `runtime/keys`; blobs under `runtime/private`, bound by a store-identity marker.
 - The separately approved, opt-in Mira AI connection test at `/mira`. It is not needed for the foundation and is not loaded on `/`. Account and private-case activity never contacts Nuance.
 - Express API bound to loopback, React/Vite/TypeScript web app, Vitest/Supertest unit and integration tests, and Playwright Chromium browser tests.
 
@@ -37,6 +37,7 @@ npm run dev
 - Private cases: <http://127.0.0.1:5173/cases>
 - Optional Mira page: <http://127.0.0.1:5173/mira>
 - API health: <http://127.0.0.1:3001/api/health>
+- API readiness: <http://127.0.0.1:3001/api/ready>
 
 Both development services bind to `127.0.0.1`, not all network interfaces. No hosting, deployment or public exposure is configured.
 
@@ -52,7 +53,7 @@ npm run verify:secrets
 npm run test:secrets
 ```
 
-The browser suite starts both local servers with `PSC_E2E_NO_KEY=1`, so no provider call is possible during automated tests. It uses a fake microphone only inside Playwright to exercise the server's honest no-key failure path.
+The browser suite starts both local servers with `PSC_E2E_NO_KEY=1`, so no provider call is possible during automated tests. It uses a fake microphone only inside Playwright to exercise the server's honest no-key failure path. The npm `pretest:e2e` preflight and Playwright config force `PSC_RUNTIME_DIR` to `test-results/e2e-runtime-<pid>`, moving the auth DB/session secret, private keys and blobs together away from the owner runtime. Direct `npx playwright test` bypasses the npm preflight; use `npm run test:e2e` for the guarded path.
 
 ## Configuration and secrets
 
@@ -62,7 +63,7 @@ The optional Mira page needs `NUANCE_API_KEY` in the project-root `.env`; server
 
 Account sessions use a generated secret at `runtime/auth-session-secret` and a SQLite file at `runtime/psc-auth.sqlite`. Both are under the git-ignored `runtime/` directory; never commit, paste or back up that directory into source control. The secret is generated once with `crypto.randomBytes`; a missing or too-short secret fails startup closed rather than using a predictable fallback. Account passwords are stored only as Argon2id hashes.
 
-Private case/document keys use `runtime/keys/master-key.json`; encrypted blobs use `runtime/private`. These are separate from the DB and are also git-ignored. The key is generated only for a fresh private store; a missing, corrupt or wrong key with existing encrypted data fails closed and is never silently regenerated. Losing the key means the private data is unrecoverable by this app. This slice has no backup/restore or secure-erasure claim.
+Private case/document keys use `runtime/keys/master-key.json`; encrypted blobs use `runtime/private`. These are separate from the DB and are also git-ignored. The key is generated only for a fresh private store with exclusive creation + fsync; a missing, corrupt or wrong key with existing encrypted data fails closed and is never silently regenerated. The database and data directory also share a random store identity; a mismatch fails before reconciliation or deletion. An existing pre-corrective local store has no identity marker and will return private 503 rather than be auto-adopted; owner-approved migration is required. Losing the key means the private data is unrecoverable by this app. This slice has no backup/restore or secure-erasure claim.
 
 ## Not implemented yet
 

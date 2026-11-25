@@ -56,6 +56,19 @@ Builder evidence: `../evidence/E1-S2-builder.md`; spec: `../../_bmad-output/impl
 
 No risk is closed by E1-S2. Independent Codex testing and actual Claude review are pending; no merge, push or deployment occurred.
 
+## E1-S2 corrective-cycle update — 2026-11-25
+
+Evidence: `../evidence/E1-S2-corrective-2026-11-25.md`; previous builder evidence preserved. Builder ran **347 unit/API/component tests (32 files, 0 failed)**, **213 API tests**, **56 isolated Playwright tests**, the preserved probes and **9/11** preserved Codex independent probes. The two Codex failures are stale expectations: immediate slot release on disconnect (F6 now holds the slot for actual work) and acceptance of the old incremental-PDF truncation (FIX H now rejects appended junk). They are not represented as passing. Browser artifact-byte verification remains **BLOCKED** on Windows/EPERM.
+
+- **R05:** unchanged owner-derived authorization; corrected late responses recheck the stored session and suppress stale cookies; UI reconciles 401/403/404/ambiguous outcomes. Owner isolation retested. **AWAITING FRESH INDEPENDENT VERIFICATION; not closed.**
+- **R12:** exclusive/fsynced key publication, explicit key/identity error classes, DB↔data-directory identity binding, health/readiness separation. The prior owner runtime has no identity marker and is fail-closed pending migration; no data loss can be established. **Not closed; no crypto audit or recovery.**
+- **R13:** PDF parsing is now worker-isolated (64 MiB/3s); final-EOF trailing junk is rejected. Browser artifact bytes remain unverified; structural validation is still not malware scanning. **Not closed.**
+- **R19/R25/R23:** deletion now treats a missing required blob as failure; no false success. Corrective tests were largely added alongside fixes rather than observed RED first; only the bidi source scan had a genuine pre-fix RED. This TDD gap is reported, not fabricated. **Not closed.**
+- **R19:** no backup/restore/retention rehearsal; owner runtime was not opened or modified. **OPEN.**
+- **R21/R08:** no hosted/TLS or real-record activation. **OPEN.**
+
+Pending owner decisions: permanent concurrency value, minimum Node version, historical TDD gaps, residual PDF boundary, browser-artifact disposition, and any identity-migration/readiness architecture. No merge, push or deployment occurred.
+
 Current delivery update — November 24, 2026: E0-S2 at `295d413` passed fresh Codex re-verification and actual Claude follow-up. The owner approved local main merge `c2a1dca`; see `../evidence/E0-S2-merge-result.md`. Research does not mitigate future legal/court access risks or authorize real records. E1-S1 now investigates/implements R05/R11/R23 with R07/R09/R10/R20/R21/R24/R25 as supporting boundaries; all authentication-specific controls remain **OPEN** until tested and independently reviewed. See `../stories/E1-S1-authentication.md`. Existing foundation-scoped results and deferred research P3 notes remain historical evidence, not guarantees for new code.
 
 ## E1-S1 authentication evidence update — 2026-11-24

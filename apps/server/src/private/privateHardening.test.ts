@@ -21,7 +21,11 @@ import { createAuth, type AuthDependencies } from '../auth/auth';
 import { loadPrivateKeys } from './crypto';
 import { initializePrivateStore } from './privateConfig';
 import { createPrivateStore, type PrivateStore } from './privateStore';
-import { createPrivateRouter, MAX_CONCURRENT_UPLOADS_PER_USER } from './privateRoutes';
+import {
+  createPrivateRouter,
+  createUnavailablePrivateRouter,
+  MAX_CONCURRENT_UPLOADS_PER_USER,
+} from './privateRoutes';
 import * as validation from './uploadValidation';
 
 const HOST = '127.0.0.1:3001';
@@ -56,7 +60,11 @@ afterEach(() => {
   }
 });
 
-function harness(options: { now?: () => number; absoluteTtlMs?: number } = {}): Harness {
+function harness(options: {
+  now?: () => number;
+  absoluteTtlMs?: number;
+  unavailablePrivate?: boolean;
+} = {}): Harness {
   const root = mkdtempSync(join(tmpdir(), 'psc-private-hardening-'));
   const dataDir = join(root, 'private');
   const keyDir = join(root, 'keys');
@@ -77,7 +85,12 @@ function harness(options: { now?: () => number; absoluteTtlMs?: number } = {}): 
     registry: new AttemptRegistry({ clock: { now: () => Date.now() }, tokenTtlMs: 60_000 }),
     clock: { now: () => Date.now() },
     auth,
-    privateDocuments: { router: createPrivateRouter({ auth, store }) },
+    privateDocuments: {
+      router: options.unavailablePrivate
+        ? createUnavailablePrivateRouter(auth)
+        : createPrivateRouter({ auth, store }),
+    },
+    privateReady: () => !options.unavailablePrivate,
   });
   const h = { root, dataDir, keyDir, auth, store, app };
   open.push(h);
@@ -202,6 +215,63 @@ describe('authorization is rechecked before publication', () => {
     expect((await pending).headers['set-cookie']).toBeUndefined();
   });
 
+  it('does not re-send a logged-out cookie on a late validation failure', async () => {
+    const h = harness();
+    const owner = await signIn(h);
+    const caseId = await owner.createCase();
+    let entered!: () => void;
+    const arrived = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    vi.spyOn(validation, 'validateUpload').mockImplementation(async () => {
+      entered();
+      await gate;
+      throw new validation.UploadValidationError('invalid');
+    });
+
+    const pending = owner.upload(caseId, PNG, 'late-invalid.png').then((response) => response);
+    await arrived;
+    await owner.post('/api/auth/logout', owner.token, {});
+    release();
+
+    const response = await pending;
+    expect(response.status).toBe(401);
+    expect(response.headers['set-cookie']).toBeUndefined();
+    expect(documentRows(h)).toBe(0);
+  });
+
+  it('does not re-send a logged-out cookie on the 408 response', async () => {
+    const h = harness();
+    const owner = await signIn(h);
+    const caseId = await owner.createCase();
+    const gate = gateValidation();
+    const realSetTimeout = globalThis.setTimeout;
+    let expire: (() => void) | undefined;
+    vi.spyOn(globalThis, 'setTimeout').mockImplementation(((
+      callback: () => void,
+      delay?: number,
+    ) => {
+      if (delay === 30_000) expire = callback;
+      return realSetTimeout(callback, delay);
+    }) as typeof setTimeout);
+
+    const pending = owner.upload(caseId, PNG, 'late-timeout.png').then((response) => response);
+    await gate.entered;
+    await owner.post('/api/auth/logout', owner.token, {});
+    expire!();
+
+    const response = await pending;
+    expect(response.status).toBe(401);
+    expect(response.headers['set-cookie']).toBeUndefined();
+    gate.release();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(documentRows(h)).toBe(0);
+  });
+
   it('does not publish when the account is disabled while the upload is pending', async () => {
     const h = harness();
     const owner = await signIn(h);
@@ -288,6 +358,52 @@ describe('upload concurrency', () => {
     expect((await aliceFirst).status).toBe(201);
     expect((await aliceSecond).status).toBe(201);
     expect((await bobUpload).status).toBe(201);
+  });
+  it('does not release upload work slots merely because the response timed out', async () => {
+    const h = harness();
+    const owner = await signIn(h);
+    const caseId = await owner.createCase();
+    const gate = gateValidationCount(2);
+    const realSetTimeout = globalThis.setTimeout;
+    const expirations: Array<() => void> = [];
+    vi.spyOn(globalThis, 'setTimeout').mockImplementation(((
+      callback: () => void,
+      delay?: number,
+    ) => {
+      if (delay === 30_000) expirations.push(callback);
+      return realSetTimeout(callback, delay);
+    }) as typeof setTimeout);
+
+    const first = owner.upload(caseId, PNG, 'timeout-one.png').then((response) => response);
+    const second = owner.upload(caseId, PNG, 'timeout-two.png').then((response) => response);
+    await gate.entered;
+    for (const expire of expirations) expire();
+    expect((await first).status).toBe(408);
+    expect((await second).status).toBe(408);
+
+    const third = await owner.upload(caseId, PNG, 'timeout-three.png');
+    expect(third.status).toBe(429);
+
+    gate.release();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    const fourth = await owner.upload(caseId, PNG, 'timeout-four.png');
+    expect(fourth.status).toBe(201);
+    expect(documentRows(h)).toBe(1);
+  });
+});
+
+describe('private storage readiness', () => {
+  it('keeps health live and returns 503 for authenticated private requests when storage is unavailable', async () => {
+    const h = harness({ unavailablePrivate: true });
+    const owner = await signIn(h);
+    expect((await owner.get('/api/health')).status).toBe(200);
+    expect((await owner.get('/api/ready')).status).toBe(503);
+    expect((await owner.get('/api/ready')).body).toEqual({
+      status: 'not-ready',
+      privateStorage: 'unavailable',
+    });
+    expect((await owner.get('/api/cases')).status).toBe(503);
+    expect((await request(h.app).get('/api/cases').set('Host', HOST)).status).toBe(401);
   });
 });
 
@@ -416,7 +532,7 @@ describe('upload validation', () => {
   });
 
   it('rejects bidirectional-override characters that disguise a filename', async () => {
-    expect(await accepts(PNG, 'invoice‮gnp.png')).toBe(false);
+    expect(await accepts(PNG, 'invoice\u202egnp.png')).toBe(false);
   });
 });
 
@@ -487,7 +603,7 @@ describe('startup never destroys ciphertext it cannot account for', () => {
           db: replacement.accountStore.db,
           paths: { dataDir: h.dataDir, keyDir: h.keyDir },
         }),
-      ).toThrow(/unavailable/);
+      ).toThrow(/unavailable|key|identity/);
       expect(existsSync(blob)).toBe(true);
     } finally {
       replacement.close();
@@ -506,7 +622,7 @@ describe('startup never destroys ciphertext it cannot account for', () => {
         keys: loadPrivateKeys(join(h.root, 'other-keys'), { allowCreate: true }),
         dataDir: h.dataDir,
       }),
-    ).toThrow(/unavailable/);
+    ).toThrow(/unavailable|key|identity/);
   });
 });
 

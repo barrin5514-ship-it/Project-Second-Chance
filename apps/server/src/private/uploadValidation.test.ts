@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { crc32 } from 'node:zlib';
 import { PDFDocument } from 'pdf-lib';
+import { validatePdfInWorker } from './pdfValidation';
 import {
   MAX_UPLOAD_BYTES,
   UploadValidationError,
@@ -55,6 +56,28 @@ describe('upload validation', () => {
       buffer: Buffer.from('%PDF-1.7\n1 0 obj\n<< /Encrypt 2 0 R >>\nendobj\n%%EOF'),
       originalName: 'encrypted.pdf',
     });
+  });
+
+  it('enforces a hard worker deadline instead of blocking on PDF parsing', async () => {
+    const bytes = await pdf(1);
+    await expect(validatePdfInWorker(bytes, { timeoutMs: 0 })).rejects.toMatchObject({
+      name: 'PdfValidationError',
+      reason: 'timeout',
+    });
+  });
+
+  it('rejects non-whitespace bytes after the final PDF EOF marker but accepts trailing whitespace', async () => {
+    const bytes = await pdf(1);
+    await expectInvalid({
+      buffer: Buffer.concat([bytes, Buffer.from('unexpected trailing bytes')]),
+      originalName: 'trailing.pdf',
+    });
+    await expect(
+      validateUpload({
+        buffer: Buffer.concat([bytes, Buffer.from('\r\n\t ')]),
+        originalName: 'whitespace.pdf',
+      }),
+    ).resolves.toMatchObject({ mimeType: 'application/pdf' });
   });
 
   it('rejects files over the 5 MiB cap before parsing', async () => {

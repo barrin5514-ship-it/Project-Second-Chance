@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { join, resolve } from 'node:path';
 import type Database from 'better-sqlite3';
 import { loadPrivateKeys, type PrivateKeys } from './crypto';
-import { createPrivateStore, type PrivateStore } from './privateStore';
+import { createPrivateStore, PrivateStorageError, type PrivateStore } from './privateStore';
 
 const PROJECT_ROOT = resolve(fileURLToPath(new URL('../../../../', import.meta.url)));
 
@@ -13,9 +13,12 @@ export interface PrivatePaths {
 }
 
 export function loadPrivatePaths(root = PROJECT_ROOT, env = process.env): PrivatePaths {
+  const runtimeRoot = env['PSC_RUNTIME_DIR']
+    ? resolve(env['PSC_RUNTIME_DIR'])
+    : join(root, 'runtime');
   return {
-    dataDir: env['PSC_PRIVATE_DATA_DIR'] ?? join(root, 'runtime', 'private'),
-    keyDir: env['PSC_PRIVATE_KEY_DIR'] ?? join(root, 'runtime', 'keys'),
+    dataDir: env['PSC_PRIVATE_DATA_DIR'] ?? join(runtimeRoot, 'private'),
+    keyDir: env['PSC_PRIVATE_KEY_DIR'] ?? join(runtimeRoot, 'keys'),
   };
 }
 
@@ -61,7 +64,12 @@ export function initializePrivateStore(options: {
   now?: () => number;
 }): { store: PrivateStore; keys: PrivateKeys } {
   const hasData = storeHasPrivateData(options.db, options.paths.dataDir);
-  const keys = loadPrivateKeys(options.paths.keyDir, { allowCreate: !hasData });
+  let keys: ReturnType<typeof loadPrivateKeys>;
+  try {
+    keys = loadPrivateKeys(options.paths.keyDir, { allowCreate: !hasData });
+  } catch {
+    throw new PrivateStorageError('key');
+  }
   const store = createPrivateStore({
     db: options.db,
     keys,

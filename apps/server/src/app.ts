@@ -8,7 +8,7 @@ import express, {
 import cookieParser from 'cookie-parser';
 import { AttemptRegistry, type Clock } from './avatar/attemptRegistry';
 import type { AuthDependencies } from './auth/auth';
-import { mountHealthRoute } from './health/health.routes';
+import { mountHealthRoute, mountReadinessRoute } from './health/health.routes';
 import { mintSessionToken, type FetchLike } from './avatar/nuanceGateway';
 import {
   CSRF_HEADER,
@@ -39,6 +39,8 @@ export interface AppDependencies {
   auth?: AuthDependencies;
   /** Private case/document API; requires auth middleware to be mounted. */
   privateDocuments?: { router: RequestHandler };
+  /** Optional readiness signal; absent means no readiness route. */
+  privateReady?: () => boolean;
 }
 
 interface SessionRecord {
@@ -69,6 +71,7 @@ export function createApp(deps: AppDependencies): Express {
 
   // Foundation contract: exact body, no configuration or provider access.
   mountHealthRoute(app);
+  if (deps.privateReady !== undefined) mountReadinessRoute(app, deps.privateReady);
 
   // Account sessions are optional so the public foundation/health and Mira
   // tests can run without SQLite or an auth secret. They mount after health so

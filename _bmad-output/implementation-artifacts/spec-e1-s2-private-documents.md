@@ -81,13 +81,14 @@ context:
 ## Implementation Notes
 
 - Storage: existing auth SQLite DB + additive migrations; AES-256-GCM `node:crypto`; HKDF-derived metadata/blob keys; key-check row; three-component envelope (magic/version/keyId/IV/tag/ciphertext) with AAD owner/case/document/version.
-- Key/data defaults: `runtime/keys/master-key.json` and `runtime/private`; tests use isolated temp stores. Key creation is allowed only for a fresh store; missing/corrupt/wrong key with data fails closed.
-- Upload: `multer` memory storage with one file/part/field limits, `file-type` detection, `pdf-lib` PDF checks, `image-size` dimensions, filename rejection, 5 MiB cap; no user filename/path used for storage.
-- Publication: ciphertext staging + fsync + pending row + rename + ready update; failures clean up and do not return success. Reconciliation handles staging/pending/orphan files and missing blobs within managed roots.
-- Auth: exported expiry-aware `requireAuth` and CSRF/Origin/Host guards from the existing auth module; no `req.isAuthenticated()`-only route.
-- Review hardening (`caee540`) was independently inspected and the unchanged private probe passed 6/6. Additional stale-upload success message found and fixed with RED/GREEN.
-- Owner decisions (2026-11-25): per-user concurrent uploads **2** (in-memory 429 guard, ADR-0004); strict extension/content match retained; Node engine **>=22.2.0** for `zlib.crc32`.
-- Test ordering gap: route/UI/E2E tests were mostly written after implementation; crypto/store/upload, initial-UI-401 and stale-upload-message have genuine RED. Concurrency tests are post-implementation regression (the first harness attempt timed out because supertest requests had not been started; that was a test-setup failure, not app RED). This is recorded in builder evidence rather than claimed as TDD history.
+- Key/data defaults: `runtime/keys/master-key.json` and `runtime/private`; tests use isolated temp stores. Key publication is exclusive + fsynced; missing/corrupt/wrong key with data fails closed. The DB and data dir share a random identity marker; mismatch fails before reconciliation/deletion. Legacy stores without a marker are not auto-adopted.
+- Upload: `multer` memory storage with one file/part/field limits, `file-type` detection, **worker-isolated PDF parsing** (64 MiB/3s), `image-size` dimensions, filename/extension rejection, 5 MiB cap; no user filename/path used for storage.
+- Publication: ciphertext staging + fsync + pending row + rename + checked ready update; failures clean up and do not return success. Reconciliation handles staging/pending/orphan files and missing blobs only after identity verification.
+- Auth: exported expiry-aware `requireAuth` and CSRF/Origin/Host guards from the existing auth module; no `req.isAuthenticated()`-only route. Late upload/error/408 responses recheck the stored session and suppress a stale cookie.
+- Review hardening (`caee540`) was independently inspected and the unchanged private probe passed 6/6.
+- Corrective cycle (2026-11-25): bounded PDF worker; store identity; strict missing-blob deletion; ambiguous-upload reconcile; work-lifetime upload slots; late-cookie checks; escape-only bidi controls + source scan; trailing-PDF rule; durable exclusive key create; `/api/ready`; quota counts persisted rows; isolated E2E runtime.
+- Implementation proposals (pending owner where noted): per-user concurrent uploads **2** (in-memory 429 guard, ADR-0004; **pending**); strict extension/content match retained (owner instruction); Node engine **>=22.2.0** for `zlib.crc32` (**pending**, only Node 26.13.0 tested).
+- Test ordering gap: route/UI/E2E tests were mostly written after implementation; crypto/store/upload, initial-UI-401, stale-upload-message and the bidi source scan have genuine RED. Most corrective server tests were added alongside the correction, not observed RED first; this is recorded honestly rather than fabricated. The two preserved Codex probes that fail are stale assertions (immediate slot release and the old incremental-PDF limitation), not newly introduced defects.
 
 ## Spec Change Log
 
@@ -95,17 +96,20 @@ context:
 
 ## Review Triage Log
 
-- No independent E1-S2 review yet.
-- One earlier full E2E run had a narrow private timeout caused by browser downloaded-stream byte verification; the test now verifies the download event plus authenticated API bytes, and the clean run passed 56/56. Recorded in builder evidence.
+- Claude final review at `3600dd6` requested changes (F1–F11). Corrective implementation applied; fresh independent review is pending.
+- One earlier full E2E run had a narrow private timeout caused by browser downloaded-stream byte verification; the test now verifies the download event plus authenticated API bytes, and the clean run passed 56/56. The browser artifact-byte gate remains blocked on Windows/EPERM and is not marked passed.
 
 ## Verification
 
-**Actual results (2026-11-24, builder):**
-- `npm test` — **331 tests / 31 files, 0 failed**.
-- `npm run test:e2e` — **56 passed** (desktop + narrow).
-- Preserved probes: auth **8**, foundation **6**, SDK **3**, Mira **2**, race **1** — all passed.
+**Actual results (2026-11-25, corrective builder):**
+- `npm test` — **347 tests / 32 files, 0 failed**.
+- `npm run test:api` — **213 passed / 18 files**.
+- `npm run test:e2e` — **56 passed** (desktop + narrow), using `test-results/e2e-runtime-<pid>`; owner runtime metadata unchanged.
+- Preserved probes: auth **8**, foundation **6**, SDK **3**, Mira **2**, private **6**, race **1** — all passed.
+- Preserved Codex independent Vitest probe: **9/11 passed**; failures are the two stale assertions (immediate disconnect release; old incremental-PDF acceptance), documented, not treated as passing.
+- Independent browser download-byte probe: **BLOCKED** (Playwright `readFileSync` EPERM; a no-app control reproduced it). API bytes were verified separately.
 - `npm run typecheck` — exit 0.
 - `npm run build` — exit 0; existing SDK chunk-size warning only.
 - `npm run verify:secrets` — exit 0; `npm run test:secrets` — **7 passed**.
 - `npm audit --omit=dev` — **0 vulnerabilities**.
-- **Independent Codex testing and actual Claude review remain PENDING; no merge, push or deployment.**
+- **Independent Codex retest, fresh Claude review and owner decisions remain PENDING; no merge, push or deployment.**

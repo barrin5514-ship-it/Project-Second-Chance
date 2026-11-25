@@ -15,9 +15,27 @@ interface CasesPageProps {
 
 type Message = { kind: 'status' | 'error'; text: string } | null;
 
+function needsAuthoritativeCheck(error: unknown): boolean {
+  return (
+    error instanceof CasesRequestError &&
+    (error.status === 401 || error.status === 403 || error.status === 404)
+  );
+}
+
+function isAmbiguousMutation(error: unknown): boolean {
+  return (
+    error instanceof CasesRequestError &&
+    (error.status === 0 || error.status === 408 || error.status >= 500)
+  );
+}
+
 function errorText(error: unknown): string {
   if (error instanceof CasesRequestError) {
-    if (error.status === 429) return 'Too many attempts. Wait a few minutes and try again.';
+    if (error.status === 429) {
+      return error.code === 'too-many-uploads'
+        ? 'Too many uploads are in progress for this account. Wait a moment and try again.'
+        : 'Too many attempts. Wait a few minutes and try again.';
+    }
     if (error.status === 413) return 'That file is too large. The limit is 5 MiB.';
     if (error.code === 'invalid-upload' || error.code === 'invalid-request') {
       return 'The request was not accepted. Check the fields and use a PDF, PNG or JPEG under 5 MiB.';
@@ -182,6 +200,15 @@ export default function CasesPage({ client = casesClient }: CasesPageProps): JSX
       setMessage({ kind: 'status', text: 'Case created.' });
     } catch (error) {
       if (requestId.current !== current) return;
+      if (isAmbiguousMutation(error)) {
+        await showServerState(current);
+        if (requestId.current !== current) return;
+        setMessage({
+          kind: 'error',
+          text: 'The case creation outcome is uncertain. Check the case list before trying again.',
+        });
+        return;
+      }
       await handleError(error, current);
     } finally {
       if (requestId.current === current) setBusy(null);
@@ -204,7 +231,9 @@ export default function CasesPage({ client = casesClient }: CasesPageProps): JSX
       if (requestId.current !== current) return;
       await reloadSelected(selected.id);
       if (requestId.current !== current) return;
-      setMessage({ kind: 'status', text: 'Case details saved.' });
+      if (selectedRef.current === selected.id) {
+        setMessage({ kind: 'status', text: 'Case details saved.' });
+      }
     } catch (error) {
       if (requestId.current !== current) return;
       await handleError(error, current);
@@ -224,7 +253,9 @@ export default function CasesPage({ client = casesClient }: CasesPageProps): JSX
       setCases(await client.listCases());
       if (requestId.current !== current) return;
       if (selectedRef.current === selected.id) selectCase(null);
-      setMessage({ kind: 'status', text: 'Case and its documents were deleted from live storage.' });
+      if (selectedRef.current === null) {
+        setMessage({ kind: 'status', text: 'Case and its documents were deleted from live storage.' });
+      }
     } catch (error) {
       if (requestId.current !== current) return;
       await handleError(error, current);
@@ -254,6 +285,20 @@ export default function CasesPage({ client = casesClient }: CasesPageProps): JSX
       }
     } catch (error) {
       if (requestId.current !== current) return;
+      if (isAmbiguousMutation(error)) {
+        const stillSelected = selectedRef.current === selected.id;
+        await showServerState(current);
+        if (requestId.current !== current) return;
+        if (stillSelected && selectedRef.current === selected.id) {
+          setFile(null);
+          setFileInputVersion((version) => version + 1);
+          setMessage({
+            kind: 'error',
+            text: 'The upload outcome is uncertain. Check the document list before trying again.',
+          });
+        }
+        return;
+      }
       await handleError(error, current);
     } finally {
       if (requestId.current === current) setBusy(null);
@@ -277,7 +322,9 @@ export default function CasesPage({ client = casesClient }: CasesPageProps): JSX
       // Keep the object URL alive while the browser consumes the download;
       // revoking immediately can truncate the file in Chromium.
       window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
-      setMessage({ kind: 'status', text: 'Download prepared.' });
+      if (selectedRef.current === selected.id) {
+        setMessage({ kind: 'status', text: 'Download prepared.' });
+      }
     } catch (error) {
       if (requestId.current !== current) return;
       await handleError(error, current);
@@ -297,7 +344,9 @@ export default function CasesPage({ client = casesClient }: CasesPageProps): JSX
       await reloadSelected(selected.id);
       if (requestId.current !== current) return;
       setConfirmDocument(null);
-      setMessage({ kind: 'status', text: 'Document deleted from live storage.' });
+      if (selectedRef.current === selected.id) {
+        setMessage({ kind: 'status', text: 'Document deleted from live storage.' });
+      }
     } catch (error) {
       if (requestId.current !== current) return;
       await handleError(error, current);
@@ -308,7 +357,7 @@ export default function CasesPage({ client = casesClient }: CasesPageProps): JSX
   }
 
   async function handleError(error: unknown, current: number): Promise<void> {
-    if (error instanceof CasesRequestError && (error.status === 401 || error.status === 403)) {
+    if (needsAuthoritativeCheck(error)) {
       try {
         const currentUser = await client.me();
         if (requestId.current !== current) return;
@@ -391,7 +440,7 @@ export default function CasesPage({ client = casesClient }: CasesPageProps): JSX
               >
                 {item.label}
                 {item.jurisdiction === null ? '' : ` — ${item.jurisdiction}`}
-                {item.status === 'ready' ? '' : ' (deletion incomplete)'}
+                {item.status === 'ready' ? '' : ' (unavailable or deletion incomplete)'}
               </button>
             </li>
           ))}

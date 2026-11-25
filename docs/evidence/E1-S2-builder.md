@@ -55,9 +55,13 @@ Verification disposition for the 18 listed findings:
 
 **Residual disagreement/limit:** the review's own open item is still true — a PDF truncated after an earlier incremental-save `%%EOF` can pass the trailing-marker check. Structural validation remains a bounded check, not a complete decoder or malware scan. I did not claim otherwise. The review's TDD history was not independently witnessed; only current behavior and the unchanged probe were independently executed here.
 
-## Owner decisions (2026-11-25)
+## Corrective cycle — Claude final review (`3600dd6`)
 
-- **Concurrent uploads:** per-user in-memory limit **2**; third concurrent upload returns generic `429 {error:"too-many-uploads"}` with `Retry-After: 1`; slots release on finish/close. Tests cover the limit, release after completion, and a second account remaining unaffected. Recorded in ADR-0004 D3. This is per-process, not distributed.
+Claude's final review requested changes F1–F11. The corrective implementation and evidence are in `E1-S2-corrective-2026-11-25.md`. Summary: PDF parsing moved to a 64 MiB/3s worker; store identity binds DB/data dir; missing required blob is a deletion error; ambiguous uploads reconcile and do not advise retry; upload slots represent actual work lifetime; all late responses recheck session/cookie; raw bidi controls replaced with escapes + source scan; PDF final-EOF rule tightened; key creation exclusive/fsynced; `/api/ready` distinguishes readiness; quota counts persisted rows. Browser tests now use an isolated runtime; owner runtime metadata was unchanged. The browser artifact-byte gate remains blocked.
+
+## Proposed settings (pending owner approval)
+
+- **Concurrent uploads:** per-user in-memory limit **2**; third concurrent upload returns generic `429 {error:"too-many-uploads"}` with `Retry-After: 1`; slots represent actual parsing/validation work and release when that work terminates, not on response finish/disconnect. Tests cover the limit, 408-held slots, release, and a second account remaining unaffected. Recorded in ADR-0004 D3. This is per-process, not distributed.
 - **Extension policy:** retained the stricter rule that `.pdf/.png/.jpg/.jpeg` must match detected content; mismatches/missing extensions are rejected. Existing tests cover this.
 - **Node engine:** `package.json`/lockfile now require **Node >=22.2.0**, because PNG CRC validation uses `node:zlib.crc32` (added in Node 22.2). Runtime remains Node v26.13.0.
 
@@ -65,11 +69,14 @@ Verification disposition for the 18 listed findings:
 
 | Command | Result |
 | --- | --- |
-| `npm test` | **331 tests / 31 files, 0 failed** |
-| `npm run test:e2e` | **56 passed** (desktop + narrow Chromium) |
+| `npm test` | **347 tests / 32 files, 0 failed** |
+| `npm run test:api` | **213 passed / 18 files** |
+| `npm run test:e2e` | **56 passed** (desktop + narrow Chromium), isolated runtime |
 | `npx vitest run --config .setup/vitest.codex-auth.config.ts` | **8 passed** |
 | foundation/SDK/Mira preserved probes | **6 + 3 + 2 passed** |
-| delayed-cookie race probe | **1 passed** (`initialResponses:1`, status 201) |
+| private preserved probe / delayed-cookie race | **6 / 1 passed** |
+| preserved Codex independent probe | **9/11 passed**; 2 stale assertions documented |
+| independent browser artifact bytes | **BLOCKED** (`readFileSync` EPERM; no-app control reproduced) |
 | `npm run typecheck` | exit 0 |
 | `npm run build` | exit 0; existing SDK chunk warning only |
 | `npm run verify:secrets` | exit 0 |
@@ -77,17 +84,20 @@ Verification disposition for the 18 listed findings:
 | `npm audit --omit=dev` | 0 vulnerabilities |
 | `git diff --check` | exit 0 |
 
-E2E uses `PSC_E2E_NO_KEY=1` and relaxed auth limits; production throttles are covered by API tests. One earlier full E2E run had a narrow private **timeout/flaky downloaded-stream byte comparison**; the test was changed to verify the browser download event plus the authenticated API byte response, and the subsequent full run passed **56/56**. The first failure is recorded rather than hidden.
+E2E uses `PSC_E2E_NO_KEY=1`, relaxed auth limits and `PSC_RUNTIME_DIR=test-results/e2e-runtime-<pid>`; production throttles are covered by API tests. One earlier full E2E run had a narrow private **timeout/flaky downloaded-stream byte comparison**; the test was changed to verify the browser download event plus the authenticated API byte response. Browser **artifact-byte** integrity remains unverified: the independent download probe failed with EPERM on `readFileSync`, and a no-app control reproduced the Windows limitation. It is not marked passed.
 
 ## Key/security limitations
 
 - No E1-S3 backup/recovery rehearsal, retention policy or secure-erasure guarantee. Live deletion is not backup deletion.
-- Key loss makes data unrecoverable; no recovery/escrow or HSM. Key creation is a local single-process fresh-store path.
+- Key loss makes data unrecoverable; no recovery/escrow or HSM. Key creation is exclusive/fsynced but directory fsync is best-effort on Windows.
 - DB+filesystem are not a single transaction; crash/reconciliation tests cover controlled faults, not every power-loss or multi-process race.
+- Store identity is new; older owner data without a marker is not auto-adopted and needs owner-approved migration. This is fail-closed, not data recovery.
 - Quotas are pre-publication checks without a serializable multi-process lock.
+- Ambiguous uploads reconcile the list but have no durable idempotency key; a user who ignores the warning can create a duplicate.
 - Loopback HTTP/no Secure cookie, per-process limiters, no hosted TLS/secret manager.
-- No malware scanner, OCR/extraction, preview, sharing, AI or legal/court features. Structural validation is bounded but not proof of safety.
-- No independent Codex/Claude gate or owner merge approval. The `.vscode/` owner-local directory remains untracked.
+- No malware scanner, OCR/extraction, preview, sharing, AI or legal/court features. Structural validation is bounded but not proof of safety; exact truncation at an earlier valid incremental-save boundary remains undetectable.
+- Browser artifact-byte verification is blocked on Windows; only the download event and API bytes were checked.
+- No independent Codex retest/fresh Claude review or owner merge approval. The `.vscode/` owner-local directory remains untracked.
 
 ## Handoff
 

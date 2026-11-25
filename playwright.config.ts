@@ -1,4 +1,13 @@
 import { defineConfig, devices } from '@playwright/test';
+import { resolve } from 'node:path';
+
+// Browser tests must never use the project's owner runtime. Auth DB/session
+// secret, private keys and blobs all move together under this disposable path.
+const isolatedRuntime = resolve(
+  process.cwd(),
+  'test-results',
+  `e2e-runtime-${process.pid}`,
+);
 
 export default defineConfig({
   testDir: './tests/e2e',
@@ -52,6 +61,8 @@ export default defineConfig({
         // API tests still exercise the production throttles; E2E must not become
         // order-dependent when both viewport projects run.
         PSC_E2E_AUTH_RELAXED: '1',
+        // Isolate auth DB/session secret, private keys and blobs together.
+        PSC_RUNTIME_DIR: isolatedRuntime,
         PORT: '3001',
       },
     },

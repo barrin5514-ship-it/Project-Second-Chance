@@ -45,6 +45,8 @@ Demo password policy: minimum 15 characters, maximum 128 characters (no truncati
 - Idle expiry **30 minutes**, rolling renewal; absolute expiry **8 hours** recorded in the session. Server-side store expiry and the absolute check are authoritative even if the browser keeps the cookie.
 - Login: regenerate the session ID, clear the pre-login session, re-authenticate with Passport, issue a fresh CSRF token, save before responding. A pre-login/fixated session cookie cannot authenticate after login.
 - Logout: `req.logout`, destroy the server session, clear the cookie, respond only after the destroy callback. A failed destroy returns a generic 5xx and does not claim success.
+- Private upload/publication and every late private error/408 re-read the stored session before replying; if it is gone, `rejectUnauthorized` destroys the stale request session and returns 401 without re-emitting a valid cookie/body. This closes the gap where only the successful publication path rechecked.
+- `PSC_RUNTIME_DIR` may move the auth database and session secret together with the private key/blob runtime for disposable tests; default remains `<project>/runtime`.
 - Disabled/missing account: deserialization and `/me` fail closed; no session for a disabled account can authenticate. Sessions may remain as opaque expired rows until cleanup, but they carry no usable identity.
 - Separate from Mira's `psc_sid` prototype cookie and its in-memory attempt map. Account operations never import/evaluate the Nuance SDK.
 

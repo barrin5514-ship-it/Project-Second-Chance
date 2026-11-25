@@ -9,6 +9,7 @@
     "test:api": "vitest run apps/server",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
+    "pretest:e2e": "node scripts/check-test-isolation.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "build": "vite build",
     "dev": "concurrently -k -n api,web -c blue,green \"npm:dev:api\" \"npm:dev:web\"",

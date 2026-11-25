@@ -5,6 +5,7 @@ import {
   mkdtempSync,
   readFileSync,
   readdirSync,
+  renameSync,
   rmSync,
   statSync,
   unlinkSync,
@@ -225,9 +226,90 @@ describe('private store', () => {
     expect(() => h.store.openDocument(h.ownerId, c.id, d2.id)).toThrow(PrivateStorageError);
   });
 
+  it('fails closed when the database and data directory identity do not match', () => {
+    const h = harness();
+    const c = h.store.createCase(h.ownerId, { label: 'identity', jurisdiction: null });
+    const d = addDocument(h, c.id);
+    const before = h.accounts.db
+      .prepare('SELECT status FROM private_documents WHERE id = ?')
+      .get(d.id) as { status: string };
+
+    expect(() =>
+      createPrivateStore({
+        db: h.accounts.db,
+        keys: h.keys,
+        dataDir: join(h.root, 'wrong-data'),
+      }),
+    ).toThrow(PrivateStorageError);
+    expect(
+      h.accounts.db.prepare('SELECT status FROM private_documents WHERE id = ?').get(d.id),
+    ).toEqual(before);
+
+    const wrongDir = harness();
+    const wc = wrongDir.store.createCase(wrongDir.ownerId, { label: 'wrong', jurisdiction: null });
+    const reset = createAccountStore(join(wrongDir.root, 'reset.sqlite'));
+    try {
+      expect(() =>
+        createPrivateStore({
+          db: reset.db,
+          keys: wrongDir.keys,
+          dataDir: wrongDir.dataDir,
+        }),
+      ).toThrow(PrivateStorageError);
+    } finally {
+      reset.close();
+    }
+    expect(wrongDir.store.getCase(wrongDir.ownerId, wc.id)?.label).toBe('wrong');
+  });
+
+  it('keeps the case list usable when one row has damaged encrypted metadata', () => {
+    const h = harness();
+    const good = h.store.createCase(h.ownerId, { label: 'Good case', jurisdiction: null });
+    const bad = h.store.createCase(h.ownerId, { label: 'Damaged case', jurisdiction: null });
+    h.accounts.db
+      .prepare("UPDATE private_cases SET metadata = X'00' WHERE id = ?")
+      .run(bad.id);
+
+    const cases = h.store.listCases(h.ownerId);
+    expect(cases).toHaveLength(2);
+    expect(cases.find((item) => item.id === good.id)?.label).toBe('Good case');
+    expect(cases.find((item) => item.id === bad.id)).toMatchObject({
+      label: 'Unavailable case',
+      status: 'error',
+    });
+    expect(h.store.getCase(h.ownerId, bad.id)?.label).toBe('Unavailable case');
+
+    const document = addDocument(h, good.id);
+    h.accounts.db
+      .prepare("UPDATE private_documents SET metadata = X'00' WHERE id = ?")
+      .run(document.id);
+    expect(h.store.listDocuments(h.ownerId, good.id)[0]).toMatchObject({
+      originalName: 'Unavailable document',
+      status: 'error',
+    });
+  });
+
+  it('does not report deletion success when a ready blob is missing', () => {
+    const h = harness();
+    const c = h.store.createCase(h.ownerId, { label: 'missing-delete', jurisdiction: null });
+    const d = addDocument(h, c.id);
+    const row = h.accounts.db
+      .prepare('SELECT blob_name FROM private_documents WHERE id = ?')
+      .get(d.id) as { blob_name: string };
+    unlinkSync(join(h.dataDir, 'blobs', row.blob_name.slice(0, 2), `${row.blob_name}.psc`));
+
+    expect(() => h.store.deleteDocument(h.ownerId, c.id, d.id)).toThrow(PrivateStorageError);
+    expect(h.store.getDocument(h.ownerId, c.id, d.id)?.status).toBe('error');
+    expect(() => h.store.openDocument(h.ownerId, c.id, d.id)).toThrow(PrivateStorageError);
+  });
+
   it('fails closed and leaves no ready row when write or rename fails', () => {
     const writeFail = harness({
-      writeFile: () => {
+      writeFile: (path, data) => {
+        if (path.includes('.psc-store-identity')) {
+          writeFileSync(path, data, { mode: 0o600 });
+          return;
+        }
         throw new Error('disk full');
       },
     });
@@ -239,7 +321,11 @@ describe('private store', () => {
     expect(writeFail.store.listDocuments(writeFail.ownerId, writeCase.id)).toHaveLength(0);
 
     const renameFail = harness({
-      rename: () => {
+      rename: (from, to) => {
+        if (from.includes('.psc-store-identity')) {
+          renameSync(from, to);
+          return;
+        }
         throw new Error('rename denied');
       },
     });

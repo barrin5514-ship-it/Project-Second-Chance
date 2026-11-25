@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { loadAuthSettings } from './authConfig';
+import { loadPrivatePaths } from '../private/privateConfig';
 
 const dirs: string[] = [];
 
@@ -35,5 +36,21 @@ describe('auth runtime settings', () => {
     loadAuthSettings(root);
     writeFileSync(join(root, 'runtime', 'auth-session-secret'), 'too-short');
     expect(() => loadAuthSettings(root)).toThrow(/too short/i);
+  });
+
+  it('moves auth database/secret, private keys and blobs together under PSC_RUNTIME_DIR', () => {
+    const root = tempRoot();
+    const isolated = join(root, 'isolated-runtime');
+    const env = { PSC_RUNTIME_DIR: isolated };
+    const settings = loadAuthSettings(root, env);
+    const paths = loadPrivatePaths(root, env);
+
+    expect(settings.databasePath).toBe(join(isolated, 'psc-auth.sqlite'));
+    expect(settings.databasePath.startsWith(join(root, 'runtime'))).toBe(false);
+    expect(paths.dataDir).toBe(join(isolated, 'private'));
+    expect(paths.keyDir).toBe(join(isolated, 'keys'));
+    expect(readFileSync(join(isolated, 'auth-session-secret'), 'utf8').trim()).toBe(
+      settings.sessionSecret,
+    );
   });
 });

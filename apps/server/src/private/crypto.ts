@@ -4,7 +4,16 @@ import {
   hkdfSync,
   randomBytes,
 } from 'node:crypto';
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  closeSync,
+  existsSync,
+  fsyncSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 
 export interface MasterKey {
@@ -97,7 +106,33 @@ export function loadOrCreateMasterKey(
     keyId: master.keyId,
     key: master.key.toString('base64'),
   };
-  writeFileSync(path, `${JSON.stringify(payload)}\n`, { encoding: 'utf8', mode: 0o600 });
+  try {
+    // 'wx' is exclusive: a concurrent first start cannot overwrite a key that
+    // another process has already published.
+    writeFileSync(path, `${JSON.stringify(payload)}\n`, {
+      encoding: 'utf8',
+      mode: 0o600,
+      flag: 'wx',
+    });
+  } catch (error) {
+    if ((error as { code?: unknown } | null)?.code === 'EEXIST') {
+      const existing = parseKeyFile(readFileSync(path, 'utf8'));
+      try {
+        chmodSync(path, 0o600);
+      } catch {
+        // Windows may not honor POSIX file modes.
+      }
+      return existing;
+    }
+    throw new Error('private-key-write-failed');
+  }
+  // Publish bytes durably before any encrypted document can be created.
+  const fd = openSync(path, 'r+');
+  try {
+    fsyncSync(fd);
+  } finally {
+    closeSync(fd);
+  }
   try {
     chmodSync(path, 0o600);
   } catch {

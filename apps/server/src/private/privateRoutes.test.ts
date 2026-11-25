@@ -465,7 +465,11 @@ describe('private cases and documents API', () => {
   it('does not publish a successful upload when staging/write fails', async () => {
     const h = await harness({
       fileOps: {
-        writeFile: () => {
+        writeFile: (path, data) => {
+          if (path.includes('.psc-store-identity')) {
+            writeFileSync(path, data, { mode: 0o600 });
+            return;
+          }
           throw new Error('disk full');
         },
       },

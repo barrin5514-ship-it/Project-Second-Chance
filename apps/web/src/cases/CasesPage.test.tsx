@@ -223,6 +223,31 @@ describe('private cases page: switching and session safety', () => {
     );
   });
 
+  it('does not show a saved message under a case selected while the edit was pending', async () => {
+    let resolveUpdate!: (value: PrivateCase) => void;
+    const client = makeClient({
+      listCases: vi.fn(async () => [CASE, CASE_B]),
+      listDocuments: vi.fn(async () => []),
+      updateCase: vi.fn(
+        () =>
+          new Promise<PrivateCase>((resolve) => {
+            resolveUpdate = resolve;
+          }),
+      ),
+    });
+    const { user, first, second } = await openTwoCases(client);
+
+    await user.click(first);
+    await user.click(screen.getByRole('button', { name: /save case details/i }));
+    await user.click(second);
+    resolveUpdate(CASE);
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(screen.queryByText(/case details saved/i)).not.toBeInTheDocument();
+  });
+
   it('ignores a late document list from a previously selected case', async () => {
     const slow = deferred<PrivateDocument[]>();
     const client = makeClient({
@@ -305,6 +330,47 @@ describe('private cases page: switching and session safety', () => {
     expect(screen.queryByText(/fictional\.pdf/)).not.toBeInTheDocument();
     expect(screen.getByText(/second\.pdf/)).toBeInTheDocument();
     expect(screen.queryByText(/document uploaded and encrypted/i)).not.toBeInTheDocument();
+  });
+
+  it('reconciles an ambiguous upload and does not advise blind retry', async () => {
+    const client = makeClient({
+      listCases: vi.fn(async () => [CASE]),
+      listDocuments: vi.fn().mockResolvedValueOnce([]).mockResolvedValue([DOC]),
+      uploadDocument: vi.fn(async () => {
+        throw new CasesRequestError(0, 'timeout');
+      }),
+    });
+    const user = userEvent.setup();
+    render(<CasesPage client={client} />);
+    await user.click(await screen.findByRole('button', { name: /Fictional case/i }));
+    await user.upload(
+      screen.getByLabelText(/upload a pdf/i),
+      new File(['x'], 'fictional.pdf', { type: 'application/pdf' }),
+    );
+    await user.click(screen.getByRole('button', { name: /upload encrypted document/i }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/uncertain/i);
+    expect(screen.getByRole('alert')).not.toHaveTextContent(/try again/i);
+    expect(await screen.findByText(/fictional\.pdf/)).toBeInTheDocument();
+    expect(client.uploadDocument).toHaveBeenCalledTimes(1);
+    expect(client.listDocuments).toHaveBeenCalledTimes(2);
+  });
+
+  it('leaves the private view when a read 404 reveals a different account session', async () => {
+    const other = { id: 'usr_b', email: 'other@example.test' };
+    const client = makeClient({
+      listCases: vi.fn(async () => [CASE]),
+      listDocuments: vi.fn(async () => {
+        throw new CasesRequestError(404, 'not-found');
+      }),
+      me: vi.fn().mockResolvedValueOnce(USER).mockResolvedValue(other),
+    });
+    const user = userEvent.setup();
+    render(<CasesPage client={client} />);
+    await user.click(await screen.findByRole('button', { name: /Fictional case/i }));
+
+    expect(await screen.findByRole('link', { name: /sign in/i })).toBeInTheDocument();
+    expect(screen.queryByText(/signed in as/i)).not.toBeInTheDocument();
   });
 
   it('returns to sign-in when opening a case finds the session gone', async () => {

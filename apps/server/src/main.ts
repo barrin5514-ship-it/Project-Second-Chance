@@ -5,7 +5,11 @@ import { AttemptRegistry } from './avatar/attemptRegistry';
 import { createAuth } from './auth/auth';
 import { loadAuthSettings } from './auth/authConfig';
 import { initializePrivateStore, loadPrivatePaths } from './private/privateConfig';
-import { createPrivateRouter } from './private/privateRoutes';
+import {
+  createPrivateRouter,
+  createUnavailablePrivateRouter,
+} from './private/privateRoutes';
+import { PrivateStorageError } from './private/privateStore';
 
 const LOOPBACK_HOST = '127.0.0.1';
 const PORT = Number(process.env.PORT ?? 3001);
@@ -35,10 +39,20 @@ const auth = createAuth({
       }
     : {}),
 });
-const privateStore = initializePrivateStore({
-  db: auth.accountStore.db,
-  paths: loadPrivatePaths(),
-});
+let privateStore: ReturnType<typeof initializePrivateStore> | null = null;
+let privateRouter = createUnavailablePrivateRouter(auth);
+try {
+  privateStore = initializePrivateStore({
+    db: auth.accountStore.db,
+    paths: loadPrivatePaths(),
+  });
+  privateRouter = createPrivateRouter({ auth, store: privateStore.store });
+} catch (error) {
+  // Do not expose key/path/database details. Health/auth/Mira stay live;
+  // private-document endpoints fail closed with 503.
+  const code = error instanceof PrivateStorageError ? error.code : 'unavailable';
+  console.error(`[api] Private storage unavailable (${code}); private routes will answer 503.`);
+}
 const app = createApp({
   hasApiKey,
   readApiKey: () => (e2eNoKey ? null : readApiKey()),
@@ -46,7 +60,8 @@ const app = createApp({
   registry: new AttemptRegistry({ clock: { now: () => Date.now() }, tokenTtlMs: 60_000 }),
   clock: { now: () => Date.now() },
   auth,
-  privateDocuments: { router: createPrivateRouter({ auth, store: privateStore.store }) },
+  privateDocuments: { router: privateRouter },
+  privateReady: () => privateStore !== null,
 });
 
 // Bind loopback only: this prototype is never reachable from another machine.
@@ -56,7 +71,7 @@ const server = createServer(app).listen(PORT, LOOPBACK_HOST, () => {
 });
 
 function shutdown(): void {
-  privateStore.store.reconcile();
+  privateStore?.store.reconcile();
   auth.close();
   server.close(() => {
     process.exit(0);

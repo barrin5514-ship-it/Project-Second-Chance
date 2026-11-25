@@ -88,6 +88,15 @@ function ownerOf(req: Request): string | null {
   return typeof req.user?.id === 'string' ? req.user.id : null;
 }
 
+function releaseUpload(res: Response): void {
+  const locals = res.locals as Record<string, unknown>;
+  const release = locals['uploadRelease'];
+  if (typeof release === 'function') {
+    delete locals['uploadRelease'];
+    release();
+  }
+}
+
 function confirmed(body: unknown): boolean {
   return typeof body === 'object' && body !== null && (body as { confirm?: unknown }).confirm === true;
 }
@@ -95,6 +104,20 @@ function confirmed(body: unknown): boolean {
 function disposition(name: string): string {
   const fallback = name.replace(/[^\x20-\x7e]/g, '_').replace(/["\\]/g, '_');
   return `attachment; filename="${fallback}"; filename*=UTF-8''${encodeURIComponent(name)}`;
+}
+
+export function createUnavailablePrivateRouter(auth: AuthDependencies): Router {
+  const router = Router();
+  router.use(
+    '/api/cases',
+    auth.requireLoopbackHost,
+    auth.requireAuth,
+    (_req, res) => {
+      res.setHeader('Cache-Control', 'no-store');
+      res.status(503).json({ error: 'unavailable' });
+    },
+  );
+  return router;
 }
 
 export function createPrivateRouter(options: {
@@ -147,14 +170,20 @@ export function createPrivateRouter(options: {
       if (remaining <= 0) activeUploads.delete(ownerId);
       else activeUploads.set(ownerId, remaining);
     };
-    res.once('finish', release);
-    res.once('close', release);
+    // The slot represents actual parsing/validation work, not merely an open
+    // response. A 408 or disconnect does not release it; the route/error path does.
+    (res.locals as Record<string, unknown>)['uploadRelease'] = release;
     next();
   };
 
   const uploadTimeout: RequestHandler = (req, res, next) => {
     const timer = setTimeout(() => {
-      if (!res.headersSent) res.status(408).json({ error: 'invalid-upload' });
+      if (res.headersSent) return;
+      if (!auth.isAuthorized(req)) {
+        auth.rejectUnauthorized(req, res);
+        return;
+      }
+      res.status(408).json({ error: 'invalid-upload' });
     }, 30_000);
     res.once('finish', () => clearTimeout(timer));
     res.once('close', () => clearTimeout(timer));
@@ -242,7 +271,10 @@ export function createPrivateRouter(options: {
       try {
         const ownerId = ownerOf(req);
         if (ownerId === null) return notFound(res);
-        if (req.file === undefined) return invalid(res);
+        if (req.file === undefined) {
+          if (!auth.isAuthorized(req)) return auth.rejectUnauthorized(req, res);
+          return invalid(res);
+        }
         let validated;
         try {
           validated = await validateUpload({
@@ -251,6 +283,10 @@ export function createPrivateRouter(options: {
           });
         } catch (error) {
           if (error instanceof UploadValidationError) {
+            if (!auth.isAuthorized(req)) {
+              auth.rejectUnauthorized(req, res);
+              return;
+            }
             return res.status(error.code === 'too-large' ? 413 : 400).json({
               error: error.code === 'too-large' ? 'payload-too-large' : 'invalid-upload',
             });
@@ -279,6 +315,8 @@ export function createPrivateRouter(options: {
           return unavailable(res);
         }
         next(error);
+      } finally {
+        releaseUpload(res);
       }
     },
   );
@@ -349,12 +387,17 @@ export function createPrivateRouter(options: {
   );
 
   router.use(
-    (error: unknown, _req: Request, res: Response, next: NextFunction) => {
+    (error: unknown, req: Request, res: Response, next: NextFunction) => {
+      releaseUpload(res);
       if (res.headersSent) {
         next(error);
         return;
       }
       res.setHeader('Cache-Control', 'no-store');
+      if (!auth.isAuthorized(req)) {
+        auth.rejectUnauthorized(req, res);
+        return;
+      }
       if (error instanceof multer.MulterError) {
         const tooLarge = error.code === 'LIMIT_FILE_SIZE';
         res.status(tooLarge ? 413 : 400).json({

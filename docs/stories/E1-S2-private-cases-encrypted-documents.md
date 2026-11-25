@@ -1,6 +1,6 @@
 # E1-S2 — Private cases and encrypted documents
 
-Prepared 2026-11-24 (America/New_York). Status: **ready for DeepSeek's bounded BMAD investigation/specification**, not a frozen implementation spec or claim that private storage works. Current branch: `feature/e1-s2-private-documents`, based on local main merge `e2edea5a11ba250b881449acaa951844e38abba0`.
+Prepared 2026-11-24 (America/New_York). Status: **corrective implementation applied 2026-11-25; no approval or merge.** Independent Codex retest, fresh Claude review, owner decisions and the browser-artifact gate remain pending. Current branch: `feature/e1-s2-private-documents`, based on local main merge `e2edea5a11ba250b881449acaa951844e38abba0`.
 
 ## Value, authority and dependencies
 

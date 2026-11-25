@@ -15,8 +15,13 @@ const PROJECT_ROOT = resolve(fileURLToPath(new URL('../../../../', import.meta.u
  * once into an ignored runtime file and never logged. Existing short/empty
  * secrets fail closed instead of being replaced silently.
  */
-export function loadAuthSettings(root = PROJECT_ROOT): AuthRuntimeSettings {
-  const runtimeDir = join(root, 'runtime');
+export function loadAuthSettings(
+  root = PROJECT_ROOT,
+  env: NodeJS.ProcessEnv = process.env,
+): AuthRuntimeSettings {
+  const runtimeDir = env['PSC_RUNTIME_DIR']
+    ? resolve(env['PSC_RUNTIME_DIR'])
+    : join(root, 'runtime');
   mkdirSync(runtimeDir, { recursive: true });
 
   const secretPath = join(runtimeDir, 'auth-session-secret');
