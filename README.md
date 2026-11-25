@@ -13,7 +13,7 @@ Local, fictional-data foundation for a legal-information and reentry-assistance 
 
 ## Requirements
 
-- Node.js 22 or newer (verified with Node v26.13.0, npm 11.20.0). The pinned SQLite driver requires Node 22+.
+- Node.js 22.2 or newer (verified with Node v26.13.0, npm 11.20.0). PNG CRC validation uses `node:zlib.crc32` and the pinned SQLite driver requires Node 22+.
 - Dependencies are pinned by `package-lock.json`. Install with the lockfile:
 
 ```bash

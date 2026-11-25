@@ -62,8 +62,8 @@ context:
 - [x] `privateCrypto.test.ts` -- AEAD round-trip, AAD owner/case/doc/version binding, nonce freshness, tamper/truncation/wrong key/keyId; RED **8 failed** then implement crypto/key manager.
 - [x] `privateStore.test.ts` -- migration, case/doc create/read/update/list/ownership, encrypted metadata at rest, restart, deletion, reconcile/orphans/pending, storage faults; RED **6 failed / 2 passed** then implement/refactor to **8 passed**.
 - [x] `uploadValidation.test.ts` -- PDF/PNG/JPEG valid + spoof/corrupt/encrypted/oversize/limits/filename/dimensions; RED **9 failed** then implement **9 passed**.
-- [x] `private.routes.test.ts` -- auth/expiry/CSRF/Origin, case CRUD, upload/list/download/delete, two owners, foreign IDs, canaries, tamper/wrong key, faults, confirmations; **post-implementation regression, no valid RED claimed**; **11 passed**.
-- [x] `casesClient.test.ts` + `CasesPage.test.tsx` -- lifecycle, pending/errors, session-ended, no false saved badge, keyboard/narrow; one genuine initial-401 RED; other UI/client checks are post-implementation evidence; **7 page + 4 client passed**.
+- [x] `private.routes.test.ts` -- auth/expiry/CSRF/Origin, case CRUD, upload/list/download/delete, two owners, foreign IDs, canaries, tamper/wrong key, faults, confirmations; **post-implementation regression, no valid RED claimed**; **12 passed** (plus `privateHardening.test.ts` review regressions and 2 concurrency tests).
+- [x] `casesClient.test.ts` + `CasesPage.test.tsx` -- lifecycle, pending/errors, session-ended, no false saved badge, keyboard/narrow; genuine REDs for initial-401 and late-upload success under a changed case; other checks post-implementation; **16 page + 4 client passed**.
 - [x] `tests/e2e/private-documents.spec.ts` -- two-account isolation, upload/download/delete, narrow; **post-implementation, no E2E RED claimed**; **6 passed**.
 - [x] ADRs/spec/evidence/threat/README/risk; full checks and preserved probes.
 
@@ -85,7 +85,9 @@ context:
 - Upload: `multer` memory storage with one file/part/field limits, `file-type` detection, `pdf-lib` PDF checks, `image-size` dimensions, filename rejection, 5 MiB cap; no user filename/path used for storage.
 - Publication: ciphertext staging + fsync + pending row + rename + ready update; failures clean up and do not return success. Reconciliation handles staging/pending/orphan files and missing blobs within managed roots.
 - Auth: exported expiry-aware `requireAuth` and CSRF/Origin/Host guards from the existing auth module; no `req.isAuthenticated()`-only route.
-- Test ordering gap: route/UI/E2E tests were mostly written after implementation; only crypto/store/upload and one UI 401 path have genuine RED. This is recorded in builder evidence rather than claimed as TDD history.
+- Review hardening (`caee540`) was independently inspected and the unchanged private probe passed 6/6. Additional stale-upload success message found and fixed with RED/GREEN.
+- Owner decisions (2026-11-25): per-user concurrent uploads **2** (in-memory 429 guard, ADR-0004); strict extension/content match retained; Node engine **>=22.2.0** for `zlib.crc32`.
+- Test ordering gap: route/UI/E2E tests were mostly written after implementation; crypto/store/upload, initial-UI-401 and stale-upload-message have genuine RED. Concurrency tests are post-implementation regression (the first harness attempt timed out because supertest requests had not been started; that was a test-setup failure, not app RED). This is recorded in builder evidence rather than claimed as TDD history.
 
 ## Spec Change Log
 
@@ -99,7 +101,7 @@ context:
 ## Verification
 
 **Actual results (2026-11-24, builder):**
-- `npm test` — **293 tests / 30 files, 0 failed**.
+- `npm test` — **331 tests / 31 files, 0 failed**.
 - `npm run test:e2e` — **56 passed** (desktop + narrow).
 - Preserved probes: auth **8**, foundation **6**, SDK **3**, Mira **2**, race **1** — all passed.
 - `npm run typecheck` — exit 0.

@@ -304,6 +304,7 @@ describe('private cases page: switching and session safety', () => {
 
     expect(screen.queryByText(/fictional\.pdf/)).not.toBeInTheDocument();
     expect(screen.getByText(/second\.pdf/)).toBeInTheDocument();
+    expect(screen.queryByText(/document uploaded and encrypted/i)).not.toBeInTheDocument();
   });
 
   it('returns to sign-in when opening a case finds the session gone', async () => {

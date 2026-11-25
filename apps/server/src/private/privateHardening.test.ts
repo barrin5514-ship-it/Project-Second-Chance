@@ -21,7 +21,7 @@ import { createAuth, type AuthDependencies } from '../auth/auth';
 import { loadPrivateKeys } from './crypto';
 import { initializePrivateStore } from './privateConfig';
 import { createPrivateStore, type PrivateStore } from './privateStore';
-import { createPrivateRouter } from './privateRoutes';
+import { createPrivateRouter, MAX_CONCURRENT_UPLOADS_PER_USER } from './privateRoutes';
 import * as validation from './uploadValidation';
 
 const HOST = '127.0.0.1:3001';
@@ -149,6 +149,28 @@ function gateValidation(): { entered: Promise<void>; release: () => void } {
   return { entered, release };
 }
 
+/** Holds exactly the first `count` uploads between validation and publication. */
+function gateValidationCount(count: number): { entered: Promise<void>; release: () => void } {
+  const original = validation.validateUpload;
+  let arrived = 0;
+  let markEntered!: () => void;
+  let release!: () => void;
+  const entered = new Promise<void>((resolve) => {
+    markEntered = resolve;
+  });
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  vi.spyOn(validation, 'validateUpload').mockImplementation(async (input) => {
+    const result = await original(input);
+    arrived += 1;
+    if (arrived >= count) markEntered();
+    await gate;
+    return result;
+  });
+  return { entered, release };
+}
+
 describe('authorization is rechecked before publication', () => {
   it('does not publish when the session is logged out while the upload is pending', async () => {
     const h = harness();
@@ -218,6 +240,54 @@ describe('authorization is rechecked before publication', () => {
     await new Promise<void>((resolve) => setImmediate(resolve));
 
     expect(documentRows(h)).toBe(0);
+  });
+});
+
+describe('upload concurrency', () => {
+  it('limits each user to two concurrent uploads and releases slots after completion', async () => {
+    expect(MAX_CONCURRENT_UPLOADS_PER_USER).toBe(2);
+    const h = harness();
+    const owner = await signIn(h);
+    const caseId = await owner.createCase();
+    const gate = gateValidationCount(2);
+
+    const first = owner.upload(caseId, PNG, 'first.png').then((response) => response);
+    const second = owner.upload(caseId, PNG, 'second.png').then((response) => response);
+    await gate.entered;
+
+    const third = await owner.upload(caseId, PNG, 'third.png');
+    expect(third.status).toBe(429);
+    expect(third.body).toEqual({ error: 'too-many-uploads' });
+    expect(third.headers['retry-after']).toBe('1');
+
+    gate.release();
+    expect((await first).status).toBe(201);
+    expect((await second).status).toBe(201);
+
+    const fourth = await owner.upload(caseId, PNG, 'fourth.png');
+    expect(fourth.status).toBe(201);
+    expect(documentRows(h)).toBe(3);
+  });
+  it('does not count a second account against the first account upload limit', async () => {
+    const h = harness();
+    const alice = await signIn(h, 'alice-concurrent@example.test');
+    const bob = await signIn(h, 'bob-concurrent@example.test');
+    const aliceCase = await alice.createCase();
+    const bobCase = await bob.createCase();
+    const gate = gateValidationCount(3);
+
+    const aliceFirst = alice.upload(aliceCase, PNG, 'alice-one.png').then((response) => response);
+    const aliceSecond = alice.upload(aliceCase, PNG, 'alice-two.png').then((response) => response);
+    const bobUpload = bob.upload(bobCase, PNG, 'bob.png').then((response) => response);
+    await gate.entered;
+
+    const aliceThird = await alice.upload(aliceCase, PNG, 'alice-three.png');
+    expect(aliceThird.status).toBe(429);
+
+    gate.release();
+    expect((await aliceFirst).status).toBe(201);
+    expect((await aliceSecond).status).toBe(201);
+    expect((await bobUpload).status).toBe(201);
   });
 });
 

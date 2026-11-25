@@ -249,7 +249,9 @@ export default function CasesPage({ client = casesClient }: CasesPageProps): JSX
       }
       await reloadSelected(selected.id);
       if (requestId.current !== current) return;
-      setMessage({ kind: 'status', text: 'Document uploaded and encrypted.' });
+      if (selectedRef.current === selected.id) {
+        setMessage({ kind: 'status', text: 'Document uploaded and encrypted.' });
+      }
     } catch (error) {
       if (requestId.current !== current) return;
       await handleError(error, current);

@@ -35,16 +35,37 @@ Builder: DeepSeek. Status: **IMPLEMENTED AND BUILDER-VERIFIED — STOPPED FOR CO
 | SQLite migrations, encrypted metadata, ownership, restart/deletion/faults | `privateStore.test.ts` → **6 failed / 2 passed** | **8 passed** (after test corrections and fsync compatibility fix) |
 | Upload content/limits/traversal | `uploadValidation.test.ts` → **9 failed** | **9 passed** |
 | Private API routes/auth/CSRF/validation/tamper/faults | **No valid RED claimed:** route tests were written after the initial route implementation. `npm test` green is regression evidence, not historical TDD for routes. | **12 passed** |
-| Cases UI | Mostly implemented before UI tests; **one genuine RED** for initial 401 private load (`1 failed` → **7 passed**). Other UI/client tests are honest post-implementation regression evidence. | **7 page + 4 client passed** |
+| Cases UI | Mostly implemented before UI tests; **genuine REDs** for initial 401 private load and for a late-upload success message under a newly selected case (`1 failed` each). Other UI/client tests are post-implementation regression evidence. | **16 page + 4 client passed** |
 | E2E private flow | Written after implementation; **no RED claimed** | **6 passed** (3 per desktop/narrow) |
 
-The route/UI/E2E ordering is a process gap and is stated rather than fabricated. The crypto, store, upload and initial-401 behaviors had observed RED.
+The route/UI/E2E ordering is a process gap and is stated rather than fabricated. The crypto, store, upload, initial-401 and stale-upload-message behaviors had observed RED. The concurrency tests are post-implementation regression: their first harness attempt timed out because supertest requests had not been started, which was a test-setup failure rather than app RED.
+
+## Independent verification of Claude review fixes (`caee540`)
+
+I did not accept the review's claims on trust. I read the `caee540` diff, the hardening/UI tests and the preserved `.setup/codex-private-independent.test.ts`, ran the probe unchanged, and re-ran the relevant suites. The probe passed **6/6**; its six checks cover logged-out pending upload, truncated PNG, 408-before-publication, junction escape, non-managed-file preservation, and two-account/tamper behavior.
+
+Verification disposition for the 18 listed findings:
+
+- **1–3 (session/logout/disable/408):** code re-reads the stored session and account before publication, destroys the request session when the stored one is gone, and checks `headersSent`/`destroyed`; all three behaviors are covered by hardening tests and the probe.
+- **4–6 (reconciliation/key reset):** cleanup uses `lstat`-based directories, managed name patterns and only direct shard entries; unmanaged files and junctions are preserved; a database without a key check with rows/blobs fails closed. Tests cover junctions, unmanaged names and reset/no-key-check cases.
+- **7–8 (unfinished case/pending document):** download requires a `ready` parent; pending documents are filtered from list and detail. Hardening tests cover deleting/error parents and pending rows.
+- **9–11 (truncation, extension, UTF-8):** PNG CRC/IEND, JPEG marker/scan/EOI and PDF trailing-EOF checks are present; filename extension must match detected content (case-insensitive `.pdf/.png/.jpg/.jpeg`); multipart filenames decode as UTF-8 and bidi/C1 controls are rejected. Tests cover truncation, mismatched extensions, bidi and non-ASCII names.
+- **12–14 (ownership/no-store/multipart):** case ownership runs before multipart parsing (spy proves validation not called); all private JSON responses get `no-store`; malformed multipart becomes generic 400. Tests cover each.
+- **15–18 (UI selection/session/deletion):** tests cover reset edit fields, stale document loads, chosen-file reset, stale upload result, session-ended/different-account handling and incomplete deletion. My additional test found that a late upload could still show “Document uploaded…” under a newly selected case; I fixed it with a **RED→GREEN** guard and added the assertion to the existing selection test.
+
+**Residual disagreement/limit:** the review's own open item is still true — a PDF truncated after an earlier incremental-save `%%EOF` can pass the trailing-marker check. Structural validation remains a bounded check, not a complete decoder or malware scan. I did not claim otherwise. The review's TDD history was not independently witnessed; only current behavior and the unchanged probe were independently executed here.
+
+## Owner decisions (2026-11-25)
+
+- **Concurrent uploads:** per-user in-memory limit **2**; third concurrent upload returns generic `429 {error:"too-many-uploads"}` with `Retry-After: 1`; slots release on finish/close. Tests cover the limit, release after completion, and a second account remaining unaffected. Recorded in ADR-0004 D3. This is per-process, not distributed.
+- **Extension policy:** retained the stricter rule that `.pdf/.png/.jpg/.jpeg` must match detected content; mismatches/missing extensions are rejected. Existing tests cover this.
+- **Node engine:** `package.json`/lockfile now require **Node >=22.2.0**, because PNG CRC validation uses `node:zlib.crc32` (added in Node 22.2). Runtime remains Node v26.13.0.
 
 ## Final checks
 
 | Command | Result |
 | --- | --- |
-| `npm test` | **293 tests / 30 files, 0 failed** |
+| `npm test` | **331 tests / 31 files, 0 failed** |
 | `npm run test:e2e` | **56 passed** (desktop + narrow Chromium) |
 | `npx vitest run --config .setup/vitest.codex-auth.config.ts` | **8 passed** |
 | foundation/SDK/Mira preserved probes | **6 + 3 + 2 passed** |

@@ -16,6 +16,8 @@ export interface PrivateDependencies {
   router: Router;
 }
 
+export const MAX_CONCURRENT_UPLOADS_PER_USER = 2;
+
 interface CaseInput {
   label: string;
   jurisdiction: string | null;
@@ -124,6 +126,31 @@ export function createPrivateRouter(options: {
     auth.requireExactOrigin,
     auth.csrfProtection,
   ];
+  const activeUploads = new Map<string, number>();
+
+  const limitConcurrentUploads: RequestHandler = (req, res, next) => {
+    const ownerId = ownerOf(req);
+    if (ownerId === null) return notFound(res);
+    const active = activeUploads.get(ownerId) ?? 0;
+    if (active >= MAX_CONCURRENT_UPLOADS_PER_USER) {
+      res.setHeader('Retry-After', '1');
+      res.setHeader('Cache-Control', 'no-store');
+      res.status(429).json({ error: 'too-many-uploads' });
+      return;
+    }
+    activeUploads.set(ownerId, active + 1);
+    let released = false;
+    const release = (): void => {
+      if (released) return;
+      released = true;
+      const remaining = (activeUploads.get(ownerId) ?? 1) - 1;
+      if (remaining <= 0) activeUploads.delete(ownerId);
+      else activeUploads.set(ownerId, remaining);
+    };
+    res.once('finish', release);
+    res.once('close', release);
+    next();
+  };
 
   const uploadTimeout: RequestHandler = (req, res, next) => {
     const timer = setTimeout(() => {
@@ -208,6 +235,7 @@ export function createPrivateRouter(options: {
     '/api/cases/:caseId/documents',
     ...mutateAuth,
     requireOwnedCase,
+    limitConcurrentUploads,
     uploadTimeout,
     parseUpload,
     async (req, res, next) => {

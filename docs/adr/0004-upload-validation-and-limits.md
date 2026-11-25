@@ -34,6 +34,7 @@
 
 - Per account: 100 live cases, 100 live documents total.
 - Per case: 50 live documents.
+- Per user: **2 concurrent uploads**. A third concurrent upload receives generic `429 {error:"too-many-uploads"}` with `Retry-After: 1`; a slot is released on response finish/close. The counter is in-memory and per-process, so this is a local-demo guard rather than a distributed lock. *Owner decision, 2026-11-25.*
 - These are counted before publication in a best-effort transaction; the local single-process demo does not claim serializable quota enforcement under concurrent uploads. A future hosted/multi-process design needs a stronger quota lock.
 - Oversized/multiple/part-overflow requests are rejected before encryption/publication.
 
@@ -47,4 +48,5 @@
 
 - 5 MiB and the page/pixel caps are explicit local-demo choices, not product-wide permanent policy.
 - `pdf-lib`/`image-size` are structural parsers, not sandboxed malware analysis; size caps bound resource use but do not prove safety of every crafted file.
+- PNG CRC verification uses `node:zlib.crc32`, which requires Node **22.2+**; the project engine is `>=22.2.0`.
 - No extraction, OCR, preview, replacement/move, sharing, bulk export or automatic malware scan is added.
