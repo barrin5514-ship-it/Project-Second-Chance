@@ -104,6 +104,8 @@ export function createPrivateRouter(options: {
   const upload = multer({
     storage: multer.memoryStorage(),
     preservePath: true,
+    // Browsers send filenames as UTF-8; the library default (latin1) garbles them.
+    defParamCharset: 'utf8',
     limits: {
       fileSize: MAX_UPLOAD_BYTES,
       files: 1,
@@ -131,6 +133,29 @@ export function createPrivateRouter(options: {
     res.once('close', () => clearTimeout(timer));
     next();
   };
+
+  // Reject unknown and foreign cases before reading or parsing any upload body.
+  const requireOwnedCase: RequestHandler = (req, res, next) => {
+    const ownerId = ownerOf(req);
+    const found = ownerId === null ? null : store.getCase(ownerId, req.params['caseId'] ?? '');
+    if (found === null || found.status !== 'ready') return notFound(res);
+    next();
+  };
+
+  // Parser failures that are not limit errors (truncated or malformed multipart)
+  // are still bad input, not a server fault.
+  const singleFile = upload.single('file');
+  const parseUpload: RequestHandler = (req, res, next) => {
+    singleFile(req, res, (error?: unknown) => {
+      if (error === undefined || error === null) return next();
+      next(error instanceof multer.MulterError ? error : new UploadValidationError('invalid'));
+    });
+  };
+
+  router.use('/api/cases', (_req, res, next) => {
+    res.setHeader('Cache-Control', 'no-store');
+    next();
+  });
 
   router.get('/api/cases', ...readAuth, (req, res) => {
     const ownerId = ownerOf(req);
@@ -182,8 +207,9 @@ export function createPrivateRouter(options: {
   router.post(
     '/api/cases/:caseId/documents',
     ...mutateAuth,
+    requireOwnedCase,
     uploadTimeout,
-    upload.single('file'),
+    parseUpload,
     async (req, res, next) => {
       try {
         const ownerId = ownerOf(req);
@@ -203,9 +229,11 @@ export function createPrivateRouter(options: {
           }
           return invalid(res);
         }
+        // The window already answered 408, or the client went away: publishing
+        // now would save a document the caller was told did not upload.
+        if (res.headersSent || res.destroyed) return;
         if (!auth.isAuthorized(req)) {
-          res.setHeader('Cache-Control', 'no-store');
-          res.status(401).json({ error: 'unauthenticated' });
+          auth.rejectUnauthorized(req, res);
           return;
         }
         const sha256 = createHash('sha256').update(req.file.buffer).digest('hex');

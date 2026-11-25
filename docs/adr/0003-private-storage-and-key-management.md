@@ -29,6 +29,7 @@ E1-S2 adds owner-isolated case CRUD and encrypted documents. SQLite metadata and
 - The auth session secret and password hashes remain separate; no reuse.
 - Master key is expanded with HKDF-SHA256 into independent 32-byte metadata and blob keys using a fixed app salt and distinct info strings. Envelope `keyId` records the master-key generation.
 - Missing/corrupt/wrong keys with existing private data fail closed. A key is created only for a fresh store with no private records and no managed blobs; startup never silently replaces a key. A key-check envelope in SQLite is authenticated by the derived metadata key and compared with the current keyId, so a substituted key fails before private data is used. Key loss means the encrypted data is unrecoverable by this app.
+- A database with no key-check record is accepted only when it has no private rows and there are no managed blobs. Otherwise startup fails closed, so a reset or mismatched database cannot cause reconciliation to delete ciphertext it does not know about. A database restored from an older copy still has its key check, and blobs newer than that copy would be removed as orphans: E1-S3 restore design must handle this. *Review change, 2026-11-24.*
 - No key backup/recovery rehearsal is implemented here; that remains E1-S3. No key value is logged, returned, placed in a URL, committed or read into assistant context.
 
 ### D3 — AEAD envelope
@@ -52,7 +53,7 @@ E1-S2 adds owner-isolated case CRUD and encrypted documents. SQLite metadata and
   4. rename staging to final, fsync the directory;
   5. update row to `ready` and return success.
 - Any failure before `ready` removes the staged/final file and row where possible. No success is returned for an incomplete publication. A crash between steps leaves a pending row/orphan ciphertext for scoped reconciliation.
-- Startup reconciliation removes staging files, pending document rows/blobs and orphan managed blob files, and marks ready documents with missing blobs as `error` (never exposes or deletes unrelated files). Deletion/cleanup is restricted to verified managed roots and server-generated names.
+- Startup reconciliation removes staging files, pending document rows/blobs and orphan managed blob files, and marks ready documents with missing blobs as `error` (never exposes or deletes unrelated files). Deletion/cleanup is restricted to verified managed roots and server-generated names. Reconciliation removes only files with server-generated names in real directories; it does not follow links or junctions and leaves other files in place. Pending rows are hidden from list and detail.
 
 ### D5 — Live deletion and status
 
@@ -63,6 +64,7 @@ E1-S2 adds owner-isolated case CRUD and encrypted documents. SQLite metadata and
 ### D6 — Authorization boundary
 
 - Reuse the auth session and exact loopback Origin/Host/CSRF protections. Export an expiry-aware `requireAuth` from auth: it checks Passport authentication, session `createdAt` absolute lifetime and disabled/missing deserialize behavior; idle expiry is enforced by the session store.
+- The recheck before upload publication re-reads the stored session and the account, because the request's own copy does not show a later logout or disable. Downloads require the parent case to be `ready`. All `/api/cases` responses are `no-store`.
 - Every private route derives owner from `req.user.id` only; posted `ownerId`, `role`, `blobName`, `key` or path fields are ignored/rejected. Both document and parent case ownership are checked with a join; unknown/foreign IDs return the same generic 404.
 - No list-all/admin shortcut.
 

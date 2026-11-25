@@ -45,6 +45,7 @@ export interface AuthDependencies {
   sessionStore: SqliteSessionStore;
   requireAuth: RequestHandler;
   isAuthorized: (req: Request) => boolean;
+  rejectUnauthorized: (req: Request, res: Response) => void;
   csrfProtection: RequestHandler;
   requireLoopbackHost: RequestHandler;
   requireExactOrigin: RequestHandler;
@@ -195,10 +196,48 @@ export function createAuth(options: AuthOptions): AuthDependencies {
     });
   }
 
+  /**
+   * Re-check authorization part-way through a request. `req.user` and
+   * `req.session` are snapshots from when the request arrived, so a logout,
+   * expiry or disable that happened since then is only visible in the stores.
+   */
   function isAuthorized(req: Request): boolean {
     if (!req.isAuthenticated() || req.user === undefined) return false;
-    const createdAt = req.session.createdAt;
-    return typeof createdAt === 'number' && now() - createdAt <= absoluteTtlMs;
+    const userId = req.user.id;
+    let stored: unknown = null;
+    // SqliteSessionStore is synchronous: the callback runs before get returns.
+    sessionStore.get(req.sessionID, (error, value) => {
+      stored = error ? null : value;
+    });
+    if (typeof stored !== 'object' || stored === null) return false;
+    const { createdAt, passport: login } = stored as {
+      createdAt?: unknown;
+      passport?: { user?: unknown };
+    };
+    return (
+      login?.user === userId &&
+      typeof createdAt === 'number' &&
+      now() - createdAt <= absoluteTtlMs &&
+      service.findPublicById(userId) !== null
+    );
+  }
+
+  /**
+   * Answer 401 part-way through a request. If the stored session is already gone,
+   * drop this request's copy too, so a late response cannot re-send its cookie
+   * over a newer sign-in in the same browser.
+   */
+  function rejectUnauthorized(req: Request, res: Response): void {
+    const reply = (): void => {
+      res.setHeader('Cache-Control', 'no-store');
+      res.status(401).json({ error: 'unauthenticated' });
+    };
+    let exists = true;
+    sessionStore.get(req.sessionID, (error, value) => {
+      exists = !error && value !== null && value !== undefined;
+    });
+    if (exists) reply();
+    else req.session.destroy(reply);
   }
 
   function requireAuth(req: Request, res: Response, next: () => void): void {
@@ -397,6 +436,7 @@ export function createAuth(options: AuthOptions): AuthDependencies {
     sessionStore,
     requireAuth,
     isAuthorized,
+    rejectUnauthorized,
     csrfProtection: csrfSynchronisedProtection,
     requireLoopbackHost,
     requireExactOrigin,

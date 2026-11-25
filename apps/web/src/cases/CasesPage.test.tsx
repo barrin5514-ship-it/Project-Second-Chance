@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import CasesPage from './CasesPage';
 import {
@@ -173,5 +173,210 @@ describe('private cases page', () => {
     await user.click(screen.getByRole('button', { name: /confirm delete case/i }));
     await waitFor(() => expect(client.deleteCase).toHaveBeenCalledWith('case_a', 'csrf-1'));
     expect(await screen.findByText(/deleted from live storage/i)).toBeInTheDocument();
+  });
+});
+
+const CASE_B: PrivateCase = {
+  ...CASE,
+  id: 'case_b',
+  label: 'Second case',
+  jurisdiction: 'Nebraska',
+};
+const DOC_B: PrivateDocument = {
+  ...DOC,
+  id: 'doc_b',
+  caseId: 'case_b',
+  originalName: 'second.pdf',
+};
+
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
+async function openTwoCases(client: CasesClient) {
+  const user = userEvent.setup();
+  render(<CasesPage client={client} />);
+  const first = await screen.findByRole('button', { name: /Fictional case/i });
+  const second = screen.getByRole('button', { name: /Second case/i });
+  return { user, first, second };
+}
+
+describe('private cases page: switching and session safety', () => {
+  it('never saves one case with the edit fields of another', async () => {
+    const client = makeClient({ listCases: vi.fn(async () => [CASE, CASE_B]) });
+    const { user, first, second } = await openTwoCases(client);
+
+    await user.click(first);
+    await user.click(screen.getByLabelText(/edit case label/i));
+    await user.click(second);
+    await user.click(screen.getByLabelText(/edit case label/i));
+    expect(screen.getByLabelText(/edit case label/i)).toHaveValue('Second case');
+    expect(screen.getByLabelText(/edit jurisdiction/i)).toHaveValue('Nebraska');
+
+    await user.click(screen.getByRole('button', { name: /save case details/i }));
+    await waitFor(() =>
+      expect(client.updateCase).toHaveBeenCalledWith('case_b', 'Second case', 'Nebraska', 'csrf-1'),
+    );
+  });
+
+  it('ignores a late document list from a previously selected case', async () => {
+    const slow = deferred<PrivateDocument[]>();
+    const client = makeClient({
+      listCases: vi.fn(async () => [CASE, CASE_B]),
+      listDocuments: vi.fn((id: string) =>
+        id === 'case_a' ? slow.promise : Promise.resolve([DOC_B]),
+      ),
+    });
+    const { user, first, second } = await openTwoCases(client);
+
+    await user.click(first);
+    await user.click(second);
+    expect(await screen.findByText(/second\.pdf/)).toBeInTheDocument();
+    await act(async () => slow.resolve([DOC]));
+
+    expect(screen.queryByText(/fictional\.pdf/)).not.toBeInTheDocument();
+    expect(screen.getByText(/second\.pdf/)).toBeInTheDocument();
+  });
+
+  it('clears the previous documents when the next case cannot load', async () => {
+    const client = makeClient({
+      listCases: vi.fn(async () => [CASE, CASE_B]),
+      listDocuments: vi.fn(async (id: string) => {
+        if (id === 'case_b') throw new CasesRequestError(503, 'unavailable');
+        return [DOC];
+      }),
+    });
+    const { user, first, second } = await openTwoCases(client);
+
+    await user.click(first);
+    expect(await screen.findByText(/fictional\.pdf/)).toBeInTheDocument();
+    await user.click(second);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/unavailable/i);
+    expect(screen.queryByText(/fictional\.pdf/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/no documents uploaded/i)).not.toBeInTheDocument();
+  });
+
+  it('drops a chosen file when the selected case changes', async () => {
+    const client = makeClient({ listCases: vi.fn(async () => [CASE, CASE_B]) });
+    const { user, first, second } = await openTwoCases(client);
+
+    await user.click(first);
+    await user.upload(
+      screen.getByLabelText(/upload a pdf/i),
+      new File(['x'], 'for-first.pdf', { type: 'application/pdf' }),
+    );
+    await user.click(second);
+
+    expect(screen.getByRole('button', { name: /upload encrypted document/i })).toBeDisabled();
+    expect((screen.getByLabelText(/upload a pdf/i) as HTMLInputElement).files).toHaveLength(0);
+  });
+
+  it('does not show an upload result under a case selected while it was pending', async () => {
+    const slow = deferred<PrivateDocument>();
+    let uploaded = false;
+    const client = makeClient({
+      listCases: vi.fn(async () => [CASE, CASE_B]),
+      listDocuments: vi.fn(async (id: string) => {
+        if (id === 'case_b') return [DOC_B];
+        return uploaded ? [DOC] : [];
+      }),
+      uploadDocument: vi.fn(() => slow.promise),
+    });
+    const { user, first, second } = await openTwoCases(client);
+
+    await user.click(first);
+    await user.upload(
+      screen.getByLabelText(/upload a pdf/i),
+      new File(['x'], 'fictional.pdf', { type: 'application/pdf' }),
+    );
+    await user.click(screen.getByRole('button', { name: /upload encrypted document/i }));
+    await user.click(second);
+    expect(await screen.findByText(/second\.pdf/)).toBeInTheDocument();
+    await act(async () => {
+      uploaded = true;
+      slow.resolve(DOC);
+    });
+
+    expect(screen.queryByText(/fictional\.pdf/)).not.toBeInTheDocument();
+    expect(screen.getByText(/second\.pdf/)).toBeInTheDocument();
+  });
+
+  it('returns to sign-in when opening a case finds the session gone', async () => {
+    const client = makeClient({
+      listCases: vi.fn(async () => [CASE]),
+      listDocuments: vi.fn(async () => {
+        throw new CasesRequestError(401, 'unauthenticated');
+      }),
+      me: vi.fn().mockResolvedValueOnce(USER).mockResolvedValue(null),
+    });
+    const user = userEvent.setup();
+    render(<CasesPage client={client} />);
+    await user.click(await screen.findByRole('button', { name: /Fictional case/i }));
+
+    expect(await screen.findByRole('link', { name: /sign in/i })).toBeInTheDocument();
+    expect(screen.queryByText(CASE.label)).not.toBeInTheDocument();
+  });
+
+  it('stops showing private content when a different account now holds the session', async () => {
+    const client = makeClient({
+      listCases: vi.fn(async () => [CASE]),
+      createCase: vi.fn(async () => {
+        throw new CasesRequestError(403, 'forbidden');
+      }),
+      me: vi
+        .fn()
+        .mockResolvedValueOnce(USER)
+        .mockResolvedValue({ id: 'usr_b', email: 'second@example.test' }),
+    });
+    const user = userEvent.setup();
+    render(<CasesPage client={client} />);
+    await user.type(await screen.findByLabelText(/^case label/i), 'Another case');
+    await user.click(screen.getByRole('button', { name: /create case/i }));
+
+    expect(await screen.findByRole('link', { name: /sign in/i })).toBeInTheDocument();
+    expect(screen.queryByText(CASE.label)).not.toBeInTheDocument();
+  });
+
+  it('refreshes to the failed state when a case deletion does not finish', async () => {
+    const client = makeClient({
+      listCases: vi
+        .fn()
+        .mockResolvedValueOnce([CASE])
+        .mockResolvedValue([{ ...CASE, status: 'error' }]),
+      deleteCase: vi.fn(async () => {
+        throw new CasesRequestError(503, 'unavailable');
+      }),
+    });
+    const user = userEvent.setup();
+    render(<CasesPage client={client} />);
+    await user.click(await screen.findByRole('button', { name: /Fictional case/i }));
+    await user.click(screen.getByRole('button', { name: /^Delete case$/i }));
+    await user.click(screen.getByRole('button', { name: /confirm delete case/i }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/unavailable/i);
+    expect(
+      await screen.findByRole('button', { name: /Fictional case.*incomplete/i }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/deleted from live storage/i)).not.toBeInTheDocument();
+  });
+
+  it('says plainly when a deletion is incomplete', async () => {
+    const client = makeClient({
+      listCases: vi.fn(async () => [{ ...CASE, status: 'error' }]),
+      listDocuments: vi.fn(async () => [{ ...DOC, status: 'error' }]),
+    });
+    const user = userEvent.setup();
+    render(<CasesPage client={client} />);
+
+    const caseButton = await screen.findByRole('button', { name: /Fictional case/i });
+    expect(caseButton).toHaveTextContent(/incomplete/i);
+    await user.click(caseButton);
+
+    expect(await screen.findByText(/fictional\.pdf/)).toHaveTextContent(/unavailable/i);
   });
 });

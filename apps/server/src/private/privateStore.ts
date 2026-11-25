@@ -4,12 +4,12 @@ import {
   closeSync,
   existsSync,
   fsyncSync,
+  lstatSync,
   mkdirSync,
   openSync,
   readFileSync,
   readdirSync,
   renameSync,
-  statSync,
   unlinkSync,
   writeFileSync,
 } from 'node:fs';
@@ -66,7 +66,9 @@ export interface PrivateFileOps {
   exists(path: string): boolean;
   readFile(path: string): Buffer;
   readdir(path: string): string[];
+  /** Both checks inspect the entry itself: links and junctions are neither. */
   isFile(path: string): boolean;
+  isDirectory(path: string): boolean;
   open(path: string, flags: string): number;
   fsync(fd: number): void;
   close(fd: number): void;
@@ -106,7 +108,14 @@ const defaultFileOps: PrivateFileOps = {
   },
   isFile(path) {
     try {
-      return statSync(path).isFile();
+      return lstatSync(path).isFile();
+    } catch {
+      return false;
+    }
+  },
+  isDirectory(path) {
+    try {
+      return lstatSync(path).isDirectory();
     } catch {
       return false;
     }
@@ -161,6 +170,7 @@ const DOC_BLOB_AAD = (owner: string, caseId: string, id: string, version: number
   buildAad('blob', owner, caseId, id, version);
 
 const BLOB_PATTERN = /^blob_[A-Za-z0-9_-]{22}$/;
+const STAGING_PATTERN = /^doc_[A-Za-z0-9_-]{22}\.part$/;
 
 function makeId(prefix: 'case' | 'doc' | 'blob'): string {
   return `${prefix}_${randomBytes(16).toString('base64url')}`;
@@ -218,6 +228,32 @@ export function createPrivateStore(options: {
     CREATE INDEX IF NOT EXISTS private_cases_owner ON private_cases(owner_id, created_at);
     CREATE INDEX IF NOT EXISTS private_documents_case ON private_documents(case_id, created_at);
   `);
+  // Cleanup only ever sees server-generated names in real directories under
+  // dataDir. Anything else, including links and junctions, is left alone.
+  const managedEntries = (
+    directory: string,
+    accept: (name: string) => boolean,
+  ): { name: string; path: string }[] => {
+    if (!ops.isDirectory(directory)) return [];
+    return ops
+      .readdir(directory)
+      .filter(accept)
+      .map((name) => ({ name, path: join(directory, name) }));
+  };
+  const managedStagingFiles = (): string[] =>
+    managedEntries(join(dataDir, 'staging'), (name) => STAGING_PATTERN.test(name))
+      .filter((entry) => ops.isFile(entry.path))
+      .map((entry) => entry.path);
+  const managedBlobFiles = (): { blobName: string; path: string }[] =>
+    managedEntries(join(dataDir, 'blobs'), (name) => name.length === 2).flatMap((shard) =>
+      managedEntries(
+        shard.path,
+        (name) => name.endsWith('.psc') && BLOB_PATTERN.test(name.slice(0, -4)),
+      )
+        .filter((entry) => ops.isFile(entry.path))
+        .map((entry) => ({ blobName: entry.name.slice(0, -4), path: entry.path })),
+    );
+
   const keyCheckAad = buildAad('metadata', 'keycheck', 'keycheck', 'keycheck', 1);
   const existingCheck = db
     .prepare('SELECT envelope FROM private_key_check WHERE id = 1')
@@ -232,6 +268,17 @@ export function createPrivateStore(options: {
       throw new PrivateStorageError('unavailable');
     }
   } else {
+    // A key check is written before any private data can exist. Data without one
+    // means a reset or mismatched database: adopting the current key here would
+    // let reconciliation delete every blob this database does not know about.
+    const rows = db
+      .prepare(
+        'SELECT (SELECT COUNT(*) FROM private_cases) + (SELECT COUNT(*) FROM private_documents) AS n',
+      )
+      .get() as { n: number };
+    if (rows.n > 0 || managedBlobFiles().length > 0) {
+      throw new PrivateStorageError('unavailable');
+    }
     const envelope = sealEnvelope(
       keys,
       'metadata',
@@ -503,7 +550,7 @@ export function createPrivateStore(options: {
     if (parent === undefined) throw new PrivateStorageError('not-found');
     const rows = db
       .prepare(
-        'SELECT * FROM private_documents WHERE owner_id = ? AND case_id = ? ORDER BY created_at DESC',
+        "SELECT * FROM private_documents WHERE owner_id = ? AND case_id = ? AND status != 'pending' ORDER BY created_at DESC",
       )
       .all(ownerId, caseId) as DocumentRow[];
     return rows.map(docResult);
@@ -511,7 +558,7 @@ export function createPrivateStore(options: {
 
   function getDocument(ownerId: string, caseId: string, id: string): PrivateDocument | null {
     const row = docRow(ownerId, caseId, id);
-    return row === undefined ? null : docResult(row);
+    return row === undefined || row.status === 'pending' ? null : docResult(row);
   }
 
   function openDocument(
@@ -521,6 +568,8 @@ export function createPrivateStore(options: {
   ): { document: PrivateDocument; bytes: Buffer } {
     const row = docRow(ownerId, caseId, id);
     if (row === undefined || row.status !== 'ready') throw new PrivateStorageError('not-found');
+    // An unfinished case deletion blocks downloads, including after a crash.
+    if (caseRow(ownerId, caseId)?.status !== 'ready') throw new PrivateStorageError('not-found');
     try {
       const envelope = ops.readFile(blobPath(row.blob_name));
       const bytes = openEnvelope(
@@ -594,23 +643,11 @@ export function createPrivateStore(options: {
     }
   }
 
-  function walkFiles(dir: string): string[] {
-    if (!ops.exists(dir)) return [];
-    const entries: string[] = [];
-    for (const name of ops.readdir(dir)) {
-      const path = join(dir, name);
-      if (ops.isFile(path)) entries.push(path);
-      else entries.push(...walkFiles(path));
-    }
-    return entries;
-  }
-
   function reconcile(): { removedStaging: number; removedOrphans: number; missingBlobs: number } {
     let removedStaging = 0;
     let removedOrphans = 0;
     let missingBlobs = 0;
-    const stagingDir = join(dataDir, 'staging');
-    for (const path of walkFiles(stagingDir)) {
+    for (const path of managedStagingFiles()) {
       safeUnlink(path);
       removedStaging += 1;
     }
@@ -626,10 +663,8 @@ export function createPrivateStore(options: {
         (row) => row.blob_name,
       ),
     );
-    for (const path of walkFiles(join(dataDir, 'blobs'))) {
-      const base = path.split(/[\\/]/).pop() ?? '';
-      const name = base.replace(/\.psc$/, '');
-      if (!BLOB_PATTERN.test(name) || !referenced.has(name)) {
+    for (const { blobName, path } of managedBlobFiles()) {
+      if (!referenced.has(blobName)) {
         safeUnlink(path);
         removedOrphans += 1;
       }

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { crc32 } from 'node:zlib';
 import { PDFDocument } from 'pdf-lib';
 import {
   MAX_UPLOAD_BYTES,
@@ -71,6 +72,8 @@ describe('upload validation', () => {
     const hugePng = Buffer.from(PNG_1X1);
     hugePng.writeUInt32BE(20_000, 16);
     hugePng.writeUInt32BE(20_000, 20);
+    // Keep the IHDR checksum valid so the size cap is what rejects this file.
+    hugePng.writeUInt32BE(crc32(hugePng.subarray(12, 29)), 29);
     await expectInvalid({ buffer: hugePng, originalName: 'huge.png' });
   });
 

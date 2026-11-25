@@ -34,7 +34,8 @@ export default function CasesPage({ client = casesClient }: CasesPageProps): JSX
   const [csrfToken, setCsrfToken] = useState<string | null>(null);
   const [cases, setCases] = useState<PrivateCase[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [documents, setDocuments] = useState<PrivateDocument[]>([]);
+  // null until the selected case's documents have actually loaded.
+  const [documents, setDocuments] = useState<PrivateDocument[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
@@ -46,7 +47,35 @@ export default function CasesPage({ client = casesClient }: CasesPageProps): JSX
   const [confirmCase, setConfirmCase] = useState(false);
   const [confirmDocument, setConfirmDocument] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
+  const [fileInputVersion, setFileInputVersion] = useState(0);
   const requestId = useRef(0);
+  // The current selection, readable from requests that finish later.
+  const selectedRef = useRef<string | null>(null);
+
+  /** Select a case (or none) and reset everything that belonged to the last one. */
+  function selectCase(item: PrivateCase | null): void {
+    selectedRef.current = item?.id ?? null;
+    setSelectedId(item?.id ?? null);
+    setDocuments(null);
+    setEditLabel(item?.label ?? '');
+    setEditJurisdiction(item?.jurisdiction ?? '');
+    setFile(null);
+    setFileInputVersion((version) => version + 1);
+    setConfirmCase(false);
+    setConfirmDocument(null);
+  }
+
+  function endSession(): void {
+    requestId.current += 1;
+    selectCase(null);
+    setUser(null);
+    setCsrfToken(null);
+    setCases([]);
+    setLabel('');
+    setJurisdiction('');
+    setBusy(null);
+    setMessage(null);
+  }
 
   async function refreshCases(active: () => boolean): Promise<void> {
     const items = await client.listCases();
@@ -91,15 +120,14 @@ export default function CasesPage({ client = casesClient }: CasesPageProps): JSX
 
   const selected = cases.find((item) => item.id === selectedId) ?? null;
 
-  async function openCase(id: string): Promise<void> {
-    setSelectedId(id);
-    setConfirmCase(false);
-    setConfirmDocument(null);
+  async function openCase(item: PrivateCase): Promise<void> {
+    selectCase(item);
     setMessage(null);
     try {
-      setDocuments(await client.listDocuments(id));
+      const nextDocuments = await client.listDocuments(item.id);
+      if (selectedRef.current === item.id) setDocuments(nextDocuments);
     } catch (error) {
-      setMessage({ kind: 'error', text: errorText(error) });
+      if (selectedRef.current === item.id) await handleError(error, requestId.current);
     }
   }
 
@@ -109,7 +137,25 @@ export default function CasesPage({ client = casesClient }: CasesPageProps): JSX
       client.listDocuments(id),
     ]);
     setCases(nextCases);
-    setDocuments(nextDocuments);
+    if (selectedRef.current === id) setDocuments(nextDocuments);
+  }
+
+  /** A failed delete can leave work half done: show what the server now holds. */
+  async function showServerState(current: number): Promise<void> {
+    const id = selectedRef.current;
+    try {
+      const nextCases = await client.listCases();
+      if (requestId.current !== current) return;
+      setCases(nextCases);
+      if (id !== null && nextCases.some((item) => item.id === id)) {
+        const nextDocuments = await client.listDocuments(id);
+        if (requestId.current === current && selectedRef.current === id) {
+          setDocuments(nextDocuments);
+        }
+      }
+    } catch {
+      // The delete error already shown stays; the next action will retry.
+    }
   }
 
   async function handleCreate(event: React.FormEvent<HTMLFormElement>): Promise<void> {
@@ -130,9 +176,9 @@ export default function CasesPage({ client = casesClient }: CasesPageProps): JSX
       if (requestId.current !== current) return;
       setLabel('');
       setJurisdiction('');
+      selectCase(created);
       await reloadSelected(created.id);
       if (requestId.current !== current) return;
-      setSelectedId(created.id);
       setMessage({ kind: 'status', text: 'Case created.' });
     } catch (error) {
       if (requestId.current !== current) return;
@@ -177,13 +223,12 @@ export default function CasesPage({ client = casesClient }: CasesPageProps): JSX
       if (requestId.current !== current) return;
       setCases(await client.listCases());
       if (requestId.current !== current) return;
-      setSelectedId(null);
-      setDocuments([]);
-      setConfirmCase(false);
+      if (selectedRef.current === selected.id) selectCase(null);
       setMessage({ kind: 'status', text: 'Case and its documents were deleted from live storage.' });
     } catch (error) {
       if (requestId.current !== current) return;
       await handleError(error, current);
+      await showServerState(current);
     } finally {
       if (requestId.current === current) setBusy(null);
     }
@@ -198,7 +243,10 @@ export default function CasesPage({ client = casesClient }: CasesPageProps): JSX
     try {
       await client.uploadDocument(selected.id, file, csrfToken);
       if (requestId.current !== current) return;
-      setFile(null);
+      if (selectedRef.current === selected.id) {
+        setFile(null);
+        setFileInputVersion((version) => version + 1);
+      }
       await reloadSelected(selected.id);
       if (requestId.current !== current) return;
       setMessage({ kind: 'status', text: 'Document uploaded and encrypted.' });
@@ -251,6 +299,7 @@ export default function CasesPage({ client = casesClient }: CasesPageProps): JSX
     } catch (error) {
       if (requestId.current !== current) return;
       await handleError(error, current);
+      await showServerState(current);
     } finally {
       if (requestId.current === current) setBusy(null);
     }
@@ -261,12 +310,8 @@ export default function CasesPage({ client = casesClient }: CasesPageProps): JSX
       try {
         const currentUser = await client.me();
         if (requestId.current !== current) return;
-        if (currentUser === null) {
-          setUser(null);
-          setCsrfToken(null);
-          setSelectedId(null);
-          setDocuments([]);
-          setMessage({ kind: 'error', text: 'Your session ended. Sign in again.' });
+        if (currentUser === null || currentUser.id !== user?.id) {
+          endSession();
           return;
         }
       } catch {
@@ -340,10 +385,11 @@ export default function CasesPage({ client = casesClient }: CasesPageProps): JSX
               <button
                 type="button"
                 className={item.id === selectedId ? 'cases-selected' : undefined}
-                onClick={() => void openCase(item.id)}
+                onClick={() => void openCase(item)}
               >
                 {item.label}
                 {item.jurisdiction === null ? '' : ` — ${item.jurisdiction}`}
+                {item.status === 'ready' ? '' : ' (deletion incomplete)'}
               </button>
             </li>
           ))}
@@ -377,15 +423,13 @@ export default function CasesPage({ client = casesClient }: CasesPageProps): JSX
       {selected !== null ? (
         <section className="cases-panel" aria-labelledby="case-detail-heading">
           <h2 id="case-detail-heading">Case: {selected.label}</h2>
-          <form
-            onSubmit={(event) => void handleEdit(event)}
-            onFocus={() => {
-              if (editLabel === '') {
-                setEditLabel(selected.label);
-                setEditJurisdiction(selected.jurisdiction ?? '');
-              }
-            }}
-          >
+          {selected.status === 'ready' ? null : (
+            <p>
+              Deletion did not finish. Downloads, uploads and edits are blocked. Delete the case
+              again to finish.
+            </p>
+          )}
+          <form onSubmit={(event) => void handleEdit(event)}>
             <label htmlFor="edit-case-label">Edit case label</label>
             <input
               id="edit-case-label"
@@ -409,16 +453,19 @@ export default function CasesPage({ client = casesClient }: CasesPageProps): JSX
           </form>
 
           <h3>Documents</h3>
-          {documents.length === 0 ? <p>No documents uploaded.</p> : null}
+          {documents?.length === 0 ? <p>No documents uploaded.</p> : null}
           <ul className="documents-list">
-            {documents.map((document) => (
+            {documents?.map((document) => (
               <li key={document.id}>
                 <span>
                   {document.originalName} — {document.mimeType} — {document.size} bytes
+                  {document.status === 'ready' ? '' : ' — unavailable; delete it to remove it'}
                 </span>
                 <button
                   type="button"
-                  disabled={busy !== null || document.status !== 'ready'}
+                  disabled={
+                    busy !== null || document.status !== 'ready' || selected.status !== 'ready'
+                  }
                   onClick={() => void handleDownload(document)}
                 >
                   {busy === `download-${document.id}` ? 'Preparing…' : 'Download'}
@@ -448,6 +495,7 @@ export default function CasesPage({ client = casesClient }: CasesPageProps): JSX
           <form onSubmit={(event) => void handleUpload(event)}>
             <label htmlFor="document-file">Upload a PDF, PNG or JPEG (max 5 MiB)</label>
             <input
+              key={fileInputVersion}
               id="document-file"
               type="file"
               accept="application/pdf,image/png,image/jpeg"
