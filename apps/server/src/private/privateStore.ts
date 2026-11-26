@@ -12,6 +12,7 @@ import {
   renameSync,
   unlinkSync,
   writeFileSync,
+  type Stats,
 } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
 import type Database from 'better-sqlite3';
@@ -64,6 +65,8 @@ export interface PrivateFileOps {
   rename(from: string, to: string): void;
   unlink(path: string): void;
   exists(path: string): boolean;
+  /** Inspect without following a link; throws ENOENT when genuinely absent. */
+  lstat(path: string): Stats;
   readFile(path: string): Buffer;
   readdir(path: string): string[];
   /** Both checks inspect the entry itself: links and junctions are neither. */
@@ -99,6 +102,9 @@ const defaultFileOps: PrivateFileOps = {
   },
   exists(path) {
     return existsSync(path);
+  },
+  lstat(path) {
+    return lstatSync(path);
   },
   readFile(path) {
     return readFileSync(path);
@@ -264,7 +270,7 @@ export function createPrivateStore(options: {
     now(),
   );
 
-  for (const dir of ['blobs', 'staging']) ops.mkdir(join(dataDir, dir));
+  ops.mkdir(dataDir);
 
   const blobPath = (name: string): string => {
     if (!BLOB_PATTERN.test(name)) throw new PrivateStorageError('unavailable');
@@ -304,11 +310,98 @@ export function createPrivateStore(options: {
     return false;
   };
   const removeManaged = (path: string, allowMissing = false): void => {
-    if (ops.exists(path)) {
-      ops.unlink(path);
-      return;
+    const parent = dirname(path);
+    const blobRoot = join(dataDir, 'blobs');
+    try {
+      // A parent directory that merely exists is not enough: it may have been
+      // recreated empty after the original managed shard was lost.
+      if (!ops.lstat(blobRoot).isDirectory()) throw new PrivateStorageError('unavailable');
+      if (!ops.lstat(parent).isDirectory()) throw new PrivateStorageError('unavailable');
+      ensureShardMarker(parent, true);
+    } catch {
+      throw new PrivateStorageError('unavailable');
     }
-    if (!allowMissing) throw new PrivateStorageError('unavailable');
+    const exists = ops.exists(path);
+    let info: Stats;
+    try {
+      info = ops.lstat(path);
+    } catch (error) {
+      if ((error as { code?: unknown } | null)?.code === 'ENOENT' && !exists) {
+        // Only a verified ENOENT, with a verified parent directory and the
+        // original shard marker, may become a terminal logical deletion.
+        if (allowMissing) return;
+      }
+      throw new PrivateStorageError('unavailable');
+    }
+    // A boolean exists() false is not proof of absence when lstat can still see
+    // the file. Keep the ciphertext and report unavailable rather than deleting
+    // metadata on a contradictory filesystem answer.
+    if (!exists || !info.isFile()) throw new PrivateStorageError('unavailable');
+    try {
+      ops.unlink(path);
+    } catch {
+      throw new PrivateStorageError('unavailable');
+    }
+  };
+
+  const shardMarkerPath = (shard: string): string => join(shard, '.psc-shard');
+  const hasManagedBlob = (shard: string): boolean => {
+    try {
+      return ops
+        .readdir(shard)
+        .some((name) => name.endsWith('.psc') && BLOB_PATTERN.test(name.slice(0, -4)));
+    } catch {
+      return false;
+    }
+  };
+  const hasShardMarker = (shard: string): boolean => {
+    try {
+      return ops.lstat(shardMarkerPath(shard)).isFile();
+    } catch {
+      return false;
+    }
+  };
+  const ensureShardMarker = (shard: string, requirePopulated: boolean): void => {
+    if (hasShardMarker(shard)) return;
+    // A legacy shard with real ciphertext can be adopted. An empty shard with a
+    // missing marker cannot: it may be a recreation after the original shard
+    // was moved away, and adopting it would make later deletions look successful.
+    if (requirePopulated && !hasManagedBlob(shard)) {
+      throw new PrivateStorageError('unavailable');
+    }
+    try {
+      ops.writeFile(shardMarkerPath(shard), Buffer.from(randomBytes(16).toString('hex'), 'utf8'));
+    } catch {
+      throw new PrivateStorageError('unavailable');
+    }
+    if (!hasShardMarker(shard)) throw new PrivateStorageError('unavailable');
+  };
+  const verifyManagedShard = (shard: string, requirePopulated: boolean): void => {
+    try {
+      if (!ops.lstat(shard).isDirectory()) throw new PrivateStorageError('unavailable');
+    } catch {
+      throw new PrivateStorageError('unavailable');
+    }
+    ensureShardMarker(shard, requirePopulated);
+  };
+  const verifyUploadDirectories = (): void => {
+    for (const directory of ['blobs', 'staging']) {
+      try {
+        if (!ops.lstat(join(dataDir, directory)).isDirectory()) {
+          throw new PrivateStorageError('unavailable');
+        }
+      } catch {
+        throw new PrivateStorageError('unavailable');
+      }
+    }
+    const rows = db
+      .prepare('SELECT blob_name FROM private_documents')
+      .all() as { blob_name: string }[];
+    for (const row of rows) {
+      // Every existing document's containing shard must still be the original
+      // managed directory. Never let an upload bless an empty recreation.
+      verifyManagedShard(join(dataDir, 'blobs', row.blob_name.slice(0, 2)), true);
+    }
   };
 
   // Bind this database to this exact managed directory before any reconciliation.
@@ -396,6 +489,25 @@ export function createPrivateStore(options: {
     );
     db.prepare('INSERT INTO private_key_check (id, envelope) VALUES (1, ?)').run(envelope);
   }
+
+  const documentRowCount = (
+    db.prepare('SELECT COUNT(*) AS n FROM private_documents').get() as { n: number }
+  ).n;
+  if (documentRowCount > 0) {
+    try {
+      if (!ops.lstat(join(dataDir, 'blobs')).isDirectory()) {
+        throw new PrivateStorageError('unavailable');
+      }
+      if (!ops.lstat(join(dataDir, 'staging')).isDirectory()) {
+        throw new PrivateStorageError('unavailable');
+      }
+    } catch {
+      // Existing document rows require verified managed roots. Never recreate
+      // an empty root and then interpret every row as missing.
+      throw new PrivateStorageError('unavailable');
+    }
+  }
+  for (const dir of ['blobs', 'staging']) ops.mkdir(join(dataDir, dir));
 
   const openCaseMeta = (row: CaseRow): { label: string; jurisdiction: string | null } => {
     const value = JSON.parse(
@@ -607,7 +719,28 @@ export function createPrivateStore(options: {
     const finalPath = blobPath(blobName);
     const staging = stagingPath(id);
     try {
-      ops.mkdir(join(dataDir, 'blobs', blobName.slice(0, 2)));
+      verifyUploadDirectories();
+      const targetShard = join(dataDir, 'blobs', blobName.slice(0, 2));
+      let shardExists = false;
+      try {
+        const shardInfo = ops.lstat(targetShard);
+        shardExists = true;
+        if (!shardInfo.isDirectory()) throw new PrivateStorageError('unavailable');
+      } catch (error) {
+        if (
+          !shardExists &&
+          (error as { code?: unknown } | null)?.code === 'ENOENT'
+        ) {
+          // A genuinely new shard is legitimate. Create and mark it before use.
+          ops.mkdir(targetShard);
+          verifyManagedShard(targetShard, false);
+        } else if (error instanceof PrivateStorageError) {
+          throw error;
+        } else {
+          throw new PrivateStorageError('unavailable');
+        }
+      }
+      if (shardExists) ensureShardMarker(targetShard, true);
       ops.writeFile(staging, blob);
       fsyncFile(staging);
       db.prepare(
@@ -762,6 +895,17 @@ export function createPrivateStore(options: {
     let removedStaging = 0;
     let removedOrphans = 0;
     let missingBlobs = 0;
+    for (const directory of ['blobs', 'staging']) {
+      try {
+        if (!ops.lstat(join(dataDir, directory)).isDirectory()) {
+          throw new PrivateStorageError('unavailable');
+        }
+      } catch {
+        // A missing/unavailable managed directory is not evidence that every
+        // document vanished.
+        throw new PrivateStorageError('unavailable');
+      }
+    }
     for (const path of managedStagingFiles()) {
       if (safeUnlink(path)) removedStaging += 1;
     }
@@ -786,13 +930,30 @@ export function createPrivateStore(options: {
       .prepare("SELECT * FROM private_documents WHERE status = 'ready'")
       .all() as DocumentRow[];
     for (const doc of ready) {
-      if (!ops.exists(blobPath(doc.blob_name))) {
-        db.prepare("UPDATE private_documents SET status = 'error', updated_at = ? WHERE id = ?").run(
-          now(),
-          doc.id,
-        );
-        missingBlobs += 1;
+      const path = blobPath(doc.blob_name);
+      try {
+        // The shard must still be the original managed directory; a recreated
+        // empty shard must not turn its ENOENT into individual-file loss.
+        verifyManagedShard(dirname(path), true);
+      } catch {
+        throw new PrivateStorageError('unavailable');
       }
+      let info: Stats;
+      try {
+        info = ops.lstat(path);
+      } catch (error) {
+        if ((error as { code?: unknown } | null)?.code === 'ENOENT') {
+          db.prepare("UPDATE private_documents SET status = 'error', updated_at = ? WHERE id = ?").run(
+            now(),
+            doc.id,
+          );
+          missingBlobs += 1;
+          continue;
+        }
+        // A transient/inaccessible stat is not proof of permanent loss.
+        throw new PrivateStorageError('unavailable');
+      }
+      if (!info.isFile()) throw new PrivateStorageError('unavailable');
     }
     return { removedStaging, removedOrphans, missingBlobs };
   }

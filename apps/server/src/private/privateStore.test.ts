@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import {
   mkdirSync,
   mkdtempSync,
+  existsSync,
   readFileSync,
   readdirSync,
   renameSync,
@@ -12,7 +13,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
 import { createAccountStore, type AccountStore } from '../auth/accountStore';
 import { loadPrivateKeys, type PrivateKeys } from './crypto';
 import {
@@ -226,6 +227,114 @@ describe('private store', () => {
     expect(() => h.store.openDocument(h.ownerId, c.id, d2.id)).toThrow(PrivateStorageError);
   });
 
+  it('does not mark an intact document missing when exists() is transiently false', () => {
+    const h = harness({ exists: (path) => (path.endsWith('.psc') ? false : existsSync(path)) });
+    const c = h.store.createCase(h.ownerId, { label: 'transient-stat', jurisdiction: null });
+    const d = addDocument(h, c.id);
+
+    h.store.reconcile();
+    expect(h.store.getDocument(h.ownerId, c.id, d.id)?.status).toBe('ready');
+    expect(h.store.openDocument(h.ownerId, c.id, d.id).bytes.equals(d.bytes)).toBe(true);
+  });
+
+  it('does not let a false exists() turn an intact blob into a deletion success', () => {
+    let unavailable = false;
+    const h = harness({
+      exists: (path) => (unavailable && path.endsWith('.psc') ? false : existsSync(path)),
+    });
+    const c = h.store.createCase(h.ownerId, { label: 'stat-unavailable-delete', jurisdiction: null });
+    const d = addDocument(h, c.id);
+    const row = h.accounts.db
+      .prepare('SELECT blob_name FROM private_documents WHERE id = ?')
+      .get(d.id) as { blob_name: string };
+    const path = join(h.dataDir, 'blobs', row.blob_name.slice(0, 2), `${row.blob_name}.psc`);
+    unavailable = true;
+
+    expect(() => h.store.deleteDocument(h.ownerId, c.id, d.id)).toThrow(PrivateStorageError);
+    expect(h.store.getDocument(h.ownerId, c.id, d.id)?.status).toBe('error');
+    expect(() => h.store.deleteDocument(h.ownerId, c.id, d.id)).toThrow(PrivateStorageError);
+    expect(existsSync(path)).toBe(true);
+    expect(
+      h.accounts.db.prepare('SELECT COUNT(*) AS n FROM private_documents WHERE id = ?').get(d.id),
+    ).toEqual({ n: 1 });
+  });
+
+  it.each(['root', 'shard'] as const)(
+    'does not mark a document missing when its blob %s is temporarily unavailable during reconciliation',
+    (kind) => {
+      const h = harness();
+      const c = h.store.createCase(h.ownerId, { label: `dir-${kind}`, jurisdiction: null });
+      const d = addDocument(h, c.id);
+      const row = h.accounts.db
+        .prepare('SELECT blob_name FROM private_documents WHERE id = ?')
+        .get(d.id) as { blob_name: string };
+      const blob = join(h.dataDir, 'blobs', row.blob_name.slice(0, 2), `${row.blob_name}.psc`);
+      const original = kind === 'root' ? join(h.dataDir, 'blobs') : dirname(blob);
+      const away = join(h.root, `away-${kind}`);
+      renameSync(original, away);
+      try {
+        expect(() => h.store.reconcile()).toThrow(PrivateStorageError);
+        expect(h.store.getDocument(h.ownerId, c.id, d.id)?.status).toBe('ready');
+      } finally {
+        renameSync(away, original);
+      }
+      h.store.reconcile();
+      expect(h.store.getDocument(h.ownerId, c.id, d.id)?.status).toBe('ready');
+      expect(h.store.openDocument(h.ownerId, c.id, d.id).bytes.equals(d.bytes)).toBe(true);
+    },
+  );
+
+  it('fails closed at startup when document rows exist but the blob root is unavailable', () => {
+    const h = harness();
+    const c = h.store.createCase(h.ownerId, { label: 'root-unavailable', jurisdiction: null });
+    const d = addDocument(h, c.id);
+    const moved = join(h.root, 'blobs-moved');
+    renameSync(join(h.dataDir, 'blobs'), moved);
+    try {
+      expect(() =>
+        createPrivateStore({ db: h.accounts.db, keys: h.keys, dataDir: h.dataDir }),
+      ).toThrow(PrivateStorageError);
+      expect(h.store.getDocument(h.ownerId, c.id, d.id)?.status).toBe('ready');
+    } finally {
+      rmSync(join(h.dataDir, 'blobs'), { recursive: true, force: true });
+      renameSync(moved, join(h.dataDir, 'blobs'));
+    }
+  });
+
+  it('does not delete metadata after an error-row retry when the blob root is missing', () => {
+    const h = harness();
+    const c = h.store.createCase(h.ownerId, { label: 'missing-root-delete', jurisdiction: null });
+    const d = addDocument(h, c.id);
+    const row = h.accounts.db
+      .prepare('SELECT blob_name FROM private_documents WHERE id = ?')
+      .get(d.id) as { blob_name: string };
+    const moved = join(h.root, 'blobs-moved');
+    renameSync(join(h.dataDir, 'blobs'), moved);
+    try {
+      expect(() => h.store.deleteDocument(h.ownerId, c.id, d.id)).toThrow(PrivateStorageError);
+      expect(h.store.getDocument(h.ownerId, c.id, d.id)?.status).toBe('error');
+      expect(() => h.store.deleteDocument(h.ownerId, c.id, d.id)).toThrow(PrivateStorageError);
+      expect(
+        h.accounts.db.prepare('SELECT COUNT(*) AS n FROM private_documents WHERE id = ?').get(d.id),
+      ).toEqual({ n: 1 });
+      expect(
+        existsSync(join(moved, row.blob_name.slice(0, 2), `${row.blob_name}.psc`)),
+      ).toBe(true);
+    } finally {
+      renameSync(moved, join(h.dataDir, 'blobs'));
+    }
+  });
+
+  it('keeps an intact document readable across an ordinary restart', () => {
+    const h = harness();
+    const c = h.store.createCase(h.ownerId, { label: 'restart-control', jurisdiction: null });
+    const d = addDocument(h, c.id);
+    const reopened = createPrivateStore({ db: h.accounts.db, keys: h.keys, dataDir: h.dataDir });
+    reopened.reconcile();
+    expect(reopened.getDocument(h.ownerId, c.id, d.id)?.status).toBe('ready');
+    expect(reopened.openDocument(h.ownerId, c.id, d.id).bytes.equals(d.bytes)).toBe(true);
+  });
+
   it('fails closed when the database and data directory identity do not match', () => {
     const h = harness();
     const c = h.store.createCase(h.ownerId, { label: 'identity', jurisdiction: null });
@@ -372,5 +481,82 @@ describe('private store', () => {
     expect(h.store.reconcile().missingBlobs).toBe(1);
     expect(h.store.getDocument(h.ownerId, c.id, d.id)?.status).toBe('error');
     expect(() => h.store.openDocument(h.ownerId, c.id, d.id)).toThrow(PrivateStorageError);
+  });
+
+  it.each(['root', 'shard'] as const)(
+    'fails closed and creates nothing when the blob %s is unavailable during upload',
+    (kind) => {
+      const h = harness();
+      const c = h.store.createCase(h.ownerId, { label: `upload-${kind}`, jurisdiction: null });
+      const d = addDocument(h, c.id);
+      const row = h.accounts.db
+        .prepare('SELECT blob_name FROM private_documents WHERE id = ?')
+        .get(d.id) as { blob_name: string };
+      const blob = join(h.dataDir, 'blobs', row.blob_name.slice(0, 2), `${row.blob_name}.psc`);
+      const container = kind === 'root' ? join(h.dataDir, 'blobs') : dirname(blob);
+      const moved = join(h.root, `moved-${kind}`);
+      renameSync(container, moved);
+
+      try {
+        expect(() => addDocument(h, c.id)).toThrow(PrivateStorageError);
+        // A failed upload must not recreate a managed directory.
+        expect(existsSync(container)).toBe(false);
+        const movedBlob =
+          kind === 'root'
+            ? join(moved, row.blob_name.slice(0, 2), `${row.blob_name}.psc`)
+            : join(moved, `${row.blob_name}.psc`);
+        expect(existsSync(movedBlob)).toBe(true);
+      } finally {
+        if (existsSync(container)) rmSync(container, { recursive: true, force: true });
+        renameSync(moved, container);
+      }
+
+      // Restoring the original directory restores the untouched document.
+      expect(h.store.openDocument(h.ownerId, c.id, d.id).bytes.equals(DOC_CANARY)).toBe(true);
+      expect(h.store.deleteDocument(h.ownerId, c.id, d.id)).toBe(true);
+    },
+  );
+
+  it('does not report deletion success when an empty shard is recreated', () => {
+    const h = harness();
+    const c = h.store.createCase(h.ownerId, { label: 'recreated-shard', jurisdiction: null });
+    const d = addDocument(h, c.id);
+    const row = h.accounts.db
+      .prepare('SELECT blob_name FROM private_documents WHERE id = ?')
+      .get(d.id) as { blob_name: string };
+    const shard = join(h.dataDir, 'blobs', row.blob_name.slice(0, 2));
+    const moved = join(h.root, 'moved-shard');
+    renameSync(shard, moved);
+    mkdirSync(shard);
+
+    try {
+      expect(() => h.store.deleteDocument(h.ownerId, c.id, d.id)).toThrow(PrivateStorageError);
+      expect(() => h.store.deleteDocument(h.ownerId, c.id, d.id)).toThrow(PrivateStorageError);
+      expect(
+        h.accounts.db.prepare('SELECT COUNT(*) AS n FROM private_documents WHERE id = ?').get(d.id),
+      ).toEqual({ n: 1 });
+      expect(existsSync(join(moved, `${row.blob_name}.psc`))).toBe(true);
+    } finally {
+      rmSync(shard, { recursive: true, force: true });
+      renameSync(moved, shard);
+    }
+
+    // The restored original shard is usable for the retry, but the document is
+    // in the incomplete-deletion state, so it is not silently reset to ready.
+    expect(h.store.getDocument(h.ownerId, c.id, d.id)?.status).toBe('error');
+    expect(h.store.deleteDocument(h.ownerId, c.id, d.id)).toBe(true);
+  });
+
+  it('keeps a populated legacy shard usable when its marker is absent', () => {
+    const h = harness();
+    const c = h.store.createCase(h.ownerId, { label: 'legacy-shard', jurisdiction: null });
+    const d = addDocument(h, c.id);
+    const row = h.accounts.db
+      .prepare('SELECT blob_name FROM private_documents WHERE id = ?')
+      .get(d.id) as { blob_name: string };
+    const shard = join(h.dataDir, 'blobs', row.blob_name.slice(0, 2));
+    rmSync(join(shard, '.psc-shard'), { force: true });
+
+    expect(h.store.deleteDocument(h.ownerId, c.id, d.id)).toBe(true);
   });
 });
