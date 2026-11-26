@@ -59,8 +59,8 @@ Final independent result: Codex **PASS** (maintained **398/398**, 35 files; API 
 
 ## 5. Preservation
 
-- A scoped local Git checkpoint was created for the three Task 01 UI/test files and its evidence report: `f1b18e0` (implementation) and `3ad49f9` (report EOF/evidence). No push, merge or deployment.
-- Unrelated pre-existing application corrections, orchestration files (`bglad/`, `AGENTS.md`, `.continue/BGLAD_SETUP.md`, `.gitignore`) and historical evidence remain uncommitted and preserved.
+- A scoped local Git checkpoint was created for the three Task 01 UI/test files and its evidence report: `f1b18e0` (implementation) and `3ad49f9` (report EOF/evidence). The coordinator/runbook/docs are a separate local checkpoint at `57ffea1`. No push, merge or deployment.
+- Unrelated pre-existing application corrections and historical evidence remain uncommitted and preserved.
 - Owner runtime metadata: 10 files / 4,377,586 bytes; hash `679F6FF1EE54B73FBB2862D8A2A0AC28E767325F0E5B5F9BD965A4428FAB29B1`, unchanged.
 - No `.env`, runtime database, key, document or credential was opened by the coordinator.
 - The isolated test copy contained no `.env` or `runtime`; the copy was removed after verification except for the preserved test logs in `.bglad/runs`.
