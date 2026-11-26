@@ -1,0 +1,11 @@
+{
+  "id": "task-01-session-expiration",
+  "project": "C:\\path\\to\\ProjectSecondChance",
+  "assignment": "Implement the approved Task 01 session-expiration behavior only.",
+  "acceptance": ["P1", "NFR-19"],
+  "branch": "feature/e1-s2-private-documents",
+  "baseCommit": "03b1bb8aee712db73d4c690be850030e050e6361",
+  "verifyCommands": ["npm test", "npm run typecheck"],
+  "maxCycles": 2,
+  "agentTimeoutMs": 900000
+}

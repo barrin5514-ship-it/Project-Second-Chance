@@ -32,6 +32,16 @@ BMAD download initially failed certificate verification under Node's bundled tru
 
 The pinned installer emitted a deprecation/security warning for its transitive glob 11.1.0 dependency. Keep this recorded as an open toolchain finding for review. No application dependency tree or application security posture has been validated yet.
 
+## Automated coordinator (November 26)
+
+The supported noninteractive agent CLIs are wired through `bglad/orchestrator.mjs`; see `bglad/README.md` and `docs/evidence/BGLAD-automation-verification-2026-11-26-resume.md`. The owner submits one assignment to DeepSeek, which implements/verifies it and runs:
+
+```powershell
+node bglad/orchestrator.mjs run --task bglad/task.json
+```
+
+Codex tests first; Claude reviews only after Codex PASS. The coordinator stores state under `.bglad/` (ignored) and never commits/pushes/merges/deploys/migrates. Full automatic correction uses `--builder-dsh` through the installed Harness account route and the non-secret `bglad/headless-account.patch.yml`; no API key is stored in the project. Claude requires a valid login. Codex behavioral tests should use the isolated-copy/no-cache method in `bglad/README.md`; do not bypass the sandbox. Current environment blockers and prohibited bypasses are recorded in the evidence report. This adapter does not replace BMAD skills, BGLAD aliases, AGENTS.md or the owner approval gate.
+
 ## Limits of verification
 
 Successful framework installation, file/schema checks and an authenticated tool-call probe do not prove Continue's complete UI workflow or the application's features. See `docs/evidence/BGLAD-setup-verification.md` for observed results and remaining checks. Do not claim application code or independent code review is complete.

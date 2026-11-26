@@ -33,3 +33,7 @@ keys/
 _bmad/render/
 .DS_Store
 Thumbs.db
+.vscode/
+.idea/
+*.tsbuildinfo
+.bglad/
