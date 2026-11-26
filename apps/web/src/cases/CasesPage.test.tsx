@@ -10,6 +10,7 @@ import {
 } from './casesClient';
 
 const USER = { id: 'usr_a', email: 'owner@example.test' };
+const OTHER_USER = { id: 'usr_b', email: 'other@example.test' };
 const CASE: PrivateCase = {
   id: 'case_a',
   label: 'Fictional case',
@@ -30,7 +31,7 @@ const DOC: PrivateDocument = {
 };
 
 function makeClient(overrides: Partial<CasesClient> = {}): CasesClient {
-  return {
+  const client: CasesClient = {
     csrf: vi.fn(async () => 'csrf-1'),
     me: vi.fn(async () => USER),
     listCases: vi.fn(async () => []),
@@ -46,6 +47,13 @@ function makeClient(overrides: Partial<CasesClient> = {}): CasesClient {
     deleteDocument: vi.fn(async () => undefined),
     ...overrides,
   };
+  if (client.listCasesWithProvenance === undefined) {
+    client.listCasesWithProvenance = async () => ({
+      accountId: USER.id,
+      cases: await client.listCases(),
+    });
+  }
+  return client;
 }
 
 afterEach(() => {
@@ -205,7 +213,319 @@ async function openTwoCases(client: CasesClient) {
   return { user, first, second };
 }
 
+async function openSingleCase(client: CasesClient) {
+  const user = userEvent.setup();
+  render(<CasesPage client={client} />);
+  const first = await screen.findByRole('button', { name: /Fictional case/i });
+  return { user, first };
+}
+
 describe('private cases page: switching and session safety', () => {
+  async function rejectPendingUpload(
+    status: number,
+    switched: boolean,
+    nextUser: typeof USER | null,
+  ): Promise<{ user: ReturnType<typeof userEvent.setup>; client: CasesClient }> {
+    let rejectUpload!: (error: Error) => void;
+    const client = makeClient({
+      listCases: vi.fn(async () => [CASE, CASE_B]),
+      listDocuments: vi.fn(async () => []),
+      me: vi.fn().mockResolvedValueOnce(USER).mockResolvedValue(nextUser),
+      uploadDocument: vi.fn(
+        () =>
+          new Promise<PrivateDocument>((_resolve, reject) => {
+            rejectUpload = reject;
+          }),
+      ),
+    });
+    const { user, first, second } = await openTwoCases(client);
+    await user.click(first);
+    await user.upload(
+      screen.getByLabelText(/upload a pdf/i),
+      new File(['x'], 'fictional.pdf', { type: 'application/pdf' }),
+    );
+    await user.click(screen.getByRole('button', { name: /upload encrypted document/i }));
+    if (switched) await user.click(second);
+    rejectUpload(new CasesRequestError(status, 'upload-rejected'));
+    await waitFor(() => expect(client.me).toHaveBeenCalledTimes(2));
+    return { user, client };
+  }
+
+  it.each([401, 403, 404])(
+    'reconciles identity for a %s upload failure after the selected case changed',
+    async (status) => {
+      const nextUser = status === 401 ? null : OTHER_USER;
+      await rejectPendingUpload(status, true, nextUser);
+      expect(await screen.findByRole('link', { name: /sign in/i })).toBeInTheDocument();
+      expect(screen.queryByText(USER.email)).not.toBeInTheDocument();
+    },
+  );
+
+  it.each([401, 403, 404])(
+    'reconciles identity for a same-case %s upload failure',
+    async (status) => {
+      const nextUser = status === 401 ? null : OTHER_USER;
+      await rejectPendingUpload(status, false, nextUser);
+      expect(await screen.findByRole('link', { name: /sign in/i })).toBeInTheDocument();
+      expect(screen.queryByText(USER.email)).not.toBeInTheDocument();
+    },
+  );
+
+  it('does not show a switched-case upload error when identity is unchanged', async () => {
+    let rejectUpload!: (error: Error) => void;
+    const client = makeClient({
+      listCases: vi.fn(async () => [CASE, CASE_B]),
+      listDocuments: vi.fn(async () => []),
+      uploadDocument: vi.fn(
+        () =>
+          new Promise<PrivateDocument>((_resolve, reject) => {
+            rejectUpload = reject;
+          }),
+      ),
+    });
+    const { user, first, second } = await openTwoCases(client);
+    await user.click(first);
+    await user.upload(
+      screen.getByLabelText(/upload a pdf/i),
+      new File(['x'], 'fictional.pdf', { type: 'application/pdf' }),
+    );
+    await user.click(screen.getByRole('button', { name: /upload encrypted document/i }));
+    await user.click(second);
+    rejectUpload(new CasesRequestError(400, 'invalid-upload'));
+
+    await waitFor(() => expect(client.uploadDocument).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('reports a confirmed edit even when the refresh fails', async () => {
+    const client = makeClient({
+      listCases: vi.fn(async () => [CASE]),
+      listCasesWithProvenance: vi
+        .fn()
+        .mockResolvedValueOnce({ accountId: USER.id, cases: [CASE] })
+        .mockRejectedValue(new CasesRequestError(503, 'unavailable')),
+    });
+    const { user, first } = await openSingleCase(client);
+    await user.click(first);
+    await user.click(screen.getByRole('button', { name: /save case details/i }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(/saved/i);
+    expect(alert).toHaveTextContent(/could not be verified/i);
+    expect(alert).not.toHaveTextContent(/try again/i);
+    expect(client.updateCase).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports a confirmed case deletion and closes it when the refresh fails', async () => {
+    const client = makeClient({
+      listCases: vi.fn(async () => [CASE]),
+      listCasesWithProvenance: vi
+        .fn()
+        .mockResolvedValueOnce({ accountId: USER.id, cases: [CASE] })
+        .mockRejectedValue(new CasesRequestError(503, 'unavailable')),
+    });
+    const { user, first } = await openSingleCase(client);
+    await user.click(first);
+    await user.click(screen.getByRole('button', { name: /^delete case$/i }));
+    await user.click(screen.getByRole('button', { name: /confirm delete case/i }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(/deleted/i);
+    expect(alert).toHaveTextContent(/could not be verified/i);
+    expect(alert).not.toHaveTextContent(/try again/i);
+    expect(screen.queryByRole('button', { name: /^delete case$/i })).not.toBeInTheDocument();
+    expect(client.deleteCase).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports a confirmed document deletion even when the refresh fails', async () => {
+    const client = makeClient({
+      listCases: vi.fn(async () => [CASE]),
+      listCasesWithProvenance: vi
+        .fn()
+        .mockResolvedValueOnce({ accountId: USER.id, cases: [CASE] })
+        .mockRejectedValue(new CasesRequestError(503, 'unavailable')),
+      listDocuments: vi.fn(async () => [DOC]),
+    });
+    const { user, first } = await openSingleCase(client);
+    await user.click(first);
+    await user.click(await screen.findByRole('button', { name: /^delete document$/i }));
+    await user.click(screen.getByRole('button', { name: /confirm delete document/i }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(/deleted/i);
+    expect(alert).toHaveTextContent(/could not be verified/i);
+    expect(alert).not.toHaveTextContent(/try again/i);
+    expect(client.deleteDocument).toHaveBeenCalledTimes(1);
+  });
+
+  it('ends the session when a post-create case-list refresh returns 401', async () => {
+    const client = makeClient({
+      listCasesWithProvenance: vi
+        .fn()
+        .mockResolvedValueOnce({ accountId: USER.id, cases: [] })
+        .mockRejectedValue(new CasesRequestError(401, 'unauthenticated')),
+      me: vi.fn().mockResolvedValueOnce(USER).mockResolvedValue(null),
+    });
+    const user = userEvent.setup();
+    render(<CasesPage client={client} />);
+    await screen.findByRole('heading', { name: /create a case/i });
+    await user.type(screen.getByLabelText(/case label/i), 'Fictional case');
+    await user.click(screen.getByRole('button', { name: /create case/i }));
+
+    expect(await screen.findByRole('link', { name: /sign in/i })).toBeInTheDocument();
+    expect(screen.queryByText(USER.email)).not.toBeInTheDocument();
+  });
+
+  it('ends the session when a post-edit case-list refresh returns 401', async () => {
+    const client = makeClient({
+      listCases: vi.fn(async () => [CASE]),
+      listCasesWithProvenance: vi
+        .fn()
+        .mockResolvedValueOnce({ accountId: USER.id, cases: [CASE] })
+        .mockRejectedValue(new CasesRequestError(401, 'unauthenticated')),
+      me: vi.fn().mockResolvedValueOnce(USER).mockResolvedValue(null),
+    });
+    const { user, first } = await openSingleCase(client);
+    await user.click(first);
+    await user.click(screen.getByRole('button', { name: /save case details/i }));
+
+    expect(await screen.findByRole('link', { name: /sign in/i })).toBeInTheDocument();
+    expect(screen.queryByText(USER.email)).not.toBeInTheDocument();
+  });
+
+  it('ends the session when a post-upload case-list refresh returns 401', async () => {
+    const client = makeClient({
+      listCases: vi.fn(async () => [CASE]),
+      listCasesWithProvenance: vi
+        .fn()
+        .mockResolvedValueOnce({ accountId: USER.id, cases: [CASE] })
+        .mockRejectedValue(new CasesRequestError(401, 'unauthenticated')),
+      me: vi.fn().mockResolvedValueOnce(USER).mockResolvedValue(null),
+      listDocuments: vi.fn(async () => []),
+    });
+    const { user, first } = await openSingleCase(client);
+    await user.click(first);
+    await user.upload(
+      screen.getByLabelText(/upload a pdf/i),
+      new File(['x'], 'fictional.pdf', { type: 'application/pdf' }),
+    );
+    await user.click(screen.getByRole('button', { name: /upload encrypted document/i }));
+
+    expect(await screen.findByRole('link', { name: /sign in/i })).toBeInTheDocument();
+    expect(screen.queryByText(USER.email)).not.toBeInTheDocument();
+  });
+
+  it('ends the session when a post-delete document-list refresh returns 404', async () => {
+    const client = makeClient({
+      listCases: vi.fn(async () => [CASE]),
+      listCasesWithProvenance: vi
+        .fn()
+        .mockResolvedValue({ accountId: USER.id, cases: [CASE] }),
+      listDocuments: vi
+        .fn()
+        .mockResolvedValueOnce([DOC])
+        .mockRejectedValue(new CasesRequestError(404, 'not-found')),
+      me: vi.fn().mockResolvedValueOnce(USER).mockResolvedValue(null),
+    });
+    const { user, first } = await openSingleCase(client);
+    await user.click(first);
+    await user.click(await screen.findByRole('button', { name: /^delete document$/i }));
+    await user.click(screen.getByRole('button', { name: /confirm delete document/i }));
+
+    expect(await screen.findByRole('link', { name: /sign in/i })).toBeInTheDocument();
+    expect(screen.queryByText(USER.email)).not.toBeInTheDocument();
+  });
+
+  it('ends the session when a successful upload refresh reveals a different account', async () => {
+    let resolveUpload!: (value: PrivateDocument) => void;
+    const client = makeClient({
+      listCasesWithProvenance: vi
+        .fn()
+        .mockResolvedValueOnce({ accountId: USER.id, cases: [CASE] })
+        .mockResolvedValue({ accountId: OTHER_USER.id, cases: [CASE_B] }),
+      me: vi.fn().mockResolvedValueOnce(USER).mockResolvedValue(OTHER_USER),
+      uploadDocument: vi.fn(
+        () =>
+          new Promise<PrivateDocument>((resolve) => {
+            resolveUpload = resolve;
+          }),
+      ),
+    });
+    const { user, first } = await openSingleCase(client);
+    await user.click(first);
+    await user.upload(
+      screen.getByLabelText(/upload a pdf/i),
+      new File(['x'], 'fictional.pdf', { type: 'application/pdf' }),
+    );
+    await user.click(screen.getByRole('button', { name: /upload encrypted document/i }));
+    resolveUpload(DOC);
+
+    expect(await screen.findByRole('link', { name: /sign in/i })).toBeInTheDocument();
+    expect(screen.queryByText(USER.email)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Second case/i })).not.toBeInTheDocument();
+  });
+
+  it('does not render another account cases after an ambiguous upload identity change', async () => {
+    let rejectUpload!: (error: Error) => void;
+    const client = makeClient({
+      listCases: vi.fn(async () => [CASE, CASE_B]),
+      listCasesWithProvenance: vi
+        .fn()
+        .mockResolvedValueOnce({ accountId: USER.id, cases: [CASE] })
+        .mockResolvedValue({ accountId: OTHER_USER.id, cases: [CASE_B] }),
+      me: vi.fn().mockResolvedValueOnce(USER).mockResolvedValue(OTHER_USER),
+      uploadDocument: vi.fn(
+        () =>
+          new Promise<PrivateDocument>((_resolve, reject) => {
+            rejectUpload = reject;
+          }),
+      ),
+    });
+    const { user, first } = await openSingleCase(client);
+    await user.click(first);
+    await user.upload(
+      screen.getByLabelText(/upload a pdf/i),
+      new File(['x'], 'fictional.pdf', { type: 'application/pdf' }),
+    );
+    await user.click(screen.getByRole('button', { name: /upload encrypted document/i }));
+    rejectUpload(new CasesRequestError(503, 'unavailable'));
+
+    expect(await screen.findByRole('link', { name: /sign in/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Second case/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(USER.email)).not.toBeInTheDocument();
+  });
+
+  it('removes a confirmed deleted document even when the refresh fails', async () => {
+    const client = makeClient({
+      listCases: vi.fn(async () => [CASE]),
+      listCasesWithProvenance: vi
+        .fn()
+        .mockResolvedValueOnce({ accountId: USER.id, cases: [CASE] })
+        .mockRejectedValue(new CasesRequestError(503, 'unavailable')),
+      listDocuments: vi.fn(async () => [DOC]),
+    });
+    const { user, first } = await openSingleCase(client);
+    await user.click(first);
+    await user.click(await screen.findByRole('button', { name: /^delete document$/i }));
+    await user.click(screen.getByRole('button', { name: /confirm delete document/i }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/deleted/i);
+    expect(screen.queryByText(DOC.originalName)).not.toBeInTheDocument();
+  });
+
+  it('rejects another account case list during initial loading', async () => {
+    const client = makeClient({
+      listCasesWithProvenance: vi.fn(async () => ({
+        accountId: OTHER_USER.id,
+        cases: [CASE_B],
+      })),
+    });
+    render(<CasesPage client={client} />);
+
+    await waitFor(() => expect(screen.queryByText(/Loading private cases/i)).not.toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: /Second case/i })).not.toBeInTheDocument();
+  });
+
   it('never saves one case with the edit fields of another', async () => {
     const client = makeClient({ listCases: vi.fn(async () => [CASE, CASE_B]) });
     const { user, first, second } = await openTwoCases(client);

@@ -95,9 +95,25 @@ export default function CasesPage({ client = casesClient }: CasesPageProps): JSX
     setMessage(null);
   }
 
-  async function refreshCases(active: () => boolean): Promise<void> {
-    const items = await client.listCases();
-    if (active()) setCases(items);
+  async function refreshCases(
+    active: () => boolean,
+    expectedAccountId: string,
+  ): Promise<void> {
+    let items: PrivateCase[];
+    let responseAccountId: string | null = null;
+    if (typeof client.listCasesWithProvenance === 'function') {
+      const snapshot = await client.listCasesWithProvenance();
+      items = snapshot.cases;
+      responseAccountId = snapshot.accountId;
+    } else {
+      items = await client.listCases();
+    }
+    if (!active()) return;
+    if (responseAccountId !== null && responseAccountId !== expectedAccountId) {
+      endSession();
+      return;
+    }
+    setCases(items);
   }
 
   useEffect(() => {
@@ -111,7 +127,7 @@ export default function CasesPage({ client = casesClient }: CasesPageProps): JSX
         setUser(currentUser);
         if (currentUser !== null) {
           try {
-            await refreshCases(() => active);
+            await refreshCases(() => active, currentUser.id);
           } catch (error) {
             if (!active) return;
             if (error instanceof CasesRequestError && error.status === 401) {
@@ -149,30 +165,94 @@ export default function CasesPage({ client = casesClient }: CasesPageProps): JSX
     }
   }
 
-  async function reloadSelected(id: string): Promise<void> {
-    const [nextCases, nextDocuments] = await Promise.all([
-      client.listCases(),
-      client.listDocuments(id),
-    ]);
-    setCases(nextCases);
-    if (selectedRef.current === id) setDocuments(nextDocuments);
+  async function listVerifiedCases(expectedAccountId: string): Promise<PrivateCase[] | null> {
+    if (typeof client.listCasesWithProvenance !== 'function') return null;
+    const snapshot = await client.listCasesWithProvenance();
+    return snapshot.accountId === expectedAccountId ? snapshot.cases : null;
+  }
+
+  async function reconcileMismatchedIdentity(request: number): Promise<void> {
+    try {
+      const current = await client.me();
+      if (requestId.current !== request) return;
+      if (current === null || current.id !== user?.id) endSession();
+    } catch {
+      // Keep the known view; the next protected action will reconcile.
+    }
+  }
+
+  async function reloadSelected(id: string): Promise<boolean> {
+    const request = requestId.current;
+    const expectedAccountId = user?.id;
+    if (expectedAccountId === undefined) return false;
+    try {
+      const nextCases = await listVerifiedCases(expectedAccountId);
+      if (requestId.current !== request) return false;
+      if (nextCases === null) {
+        await reconcileMismatchedIdentity(request);
+        return false;
+      }
+      setCases(nextCases);
+      const nextDocuments = await client.listDocuments(id);
+      if (requestId.current !== request) return false;
+      if (selectedRef.current === id) setDocuments(nextDocuments);
+      return true;
+    } catch (error) {
+      if (requestId.current !== request) return false;
+      // A refresh can itself discover that the session ended or changed. That
+      // is authoritative evidence even though the write already succeeded, so
+      // reconcile identity instead of leaving private content visible.
+      if (needsAuthoritativeCheck(error)) await reconcileMismatchedIdentity(request);
+      // The mutation may already have succeeded. Do not turn a refresh failure
+      // into a write failure; callers report a confirmed-but-unverified state
+      // when identity is unchanged.
+      return false;
+    }
   }
 
   /** A failed delete can leave work half done: show what the server now holds. */
-  async function showServerState(current: number): Promise<void> {
+  async function showServerState(
+    current: number,
+    options: { renderCases?: boolean } = {},
+  ): Promise<void> {
+    const renderCases = options.renderCases ?? true;
     const id = selectedRef.current;
     try {
-      const nextCases = await client.listCases();
+      let nextCases: PrivateCase[];
+      let responseAccountId: string | null = null;
+      if (typeof client.listCasesWithProvenance === 'function') {
+        const snapshot = await client.listCasesWithProvenance();
+        nextCases = snapshot.cases;
+        responseAccountId = snapshot.accountId;
+      } else {
+        nextCases = await client.listCases();
+      }
       if (requestId.current !== current) return;
-      setCases(nextCases);
-      if (id !== null && nextCases.some((item) => item.id === id)) {
+      // Refreshed private state must belong to the identity currently shown.
+      // A session change during an ambiguous operation must not render the new
+      // account's cases under the old identity.
+      const authoritative = await client.me();
+      if (requestId.current !== current) return;
+      if (authoritative === null || authoritative.id !== user?.id) {
+        endSession();
+        return;
+      }
+      // Real responses carry authenticated account provenance. If the client
+      // cannot provide it, ambiguous mutations fail closed and retain the known
+      // case list; only the already-scoped case's documents are refreshed.
+      const canRenderCases =
+        responseAccountId !== null ? responseAccountId === authoritative.id : renderCases;
+      if (canRenderCases) setCases(nextCases);
+      if (id !== null) {
         const nextDocuments = await client.listDocuments(id);
         if (requestId.current === current && selectedRef.current === id) {
           setDocuments(nextDocuments);
         }
       }
-    } catch {
-      // The delete error already shown stays; the next action will retry.
+    } catch (error) {
+      if (requestId.current !== current) return;
+      if (error instanceof CasesRequestError && error.status === 401) endSession();
+      // The originating action's error message stays; the next action retries.
     }
   }
 
@@ -195,13 +275,20 @@ export default function CasesPage({ client = casesClient }: CasesPageProps): JSX
       setLabel('');
       setJurisdiction('');
       selectCase(created);
-      await reloadSelected(created.id);
+      const refreshed = await reloadSelected(created.id);
       if (requestId.current !== current) return;
-      setMessage({ kind: 'status', text: 'Case created.' });
+      setMessage(
+        refreshed
+          ? { kind: 'status', text: 'Case created.' }
+          : {
+              kind: 'error',
+              text: 'The case was created, but the refreshed list could not be verified. Refresh before continuing.',
+            },
+      );
     } catch (error) {
       if (requestId.current !== current) return;
       if (isAmbiguousMutation(error)) {
-        await showServerState(current);
+        await showServerState(current, { renderCases: false });
         if (requestId.current !== current) return;
         setMessage({
           kind: 'error',
@@ -229,10 +316,17 @@ export default function CasesPage({ client = casesClient }: CasesPageProps): JSX
         csrfToken,
       );
       if (requestId.current !== current) return;
-      await reloadSelected(selected.id);
+      const refreshed = await reloadSelected(selected.id);
       if (requestId.current !== current) return;
       if (selectedRef.current === selected.id) {
-        setMessage({ kind: 'status', text: 'Case details saved.' });
+        setMessage(
+          refreshed
+            ? { kind: 'status', text: 'Case details saved.' }
+            : {
+                kind: 'error',
+                text: 'The case was saved, but the refreshed list could not be verified. Refresh before continuing.',
+              },
+        );
       }
     } catch (error) {
       if (requestId.current !== current) return;
@@ -250,11 +344,31 @@ export default function CasesPage({ client = casesClient }: CasesPageProps): JSX
     try {
       await client.deleteCase(selected.id, csrfToken);
       if (requestId.current !== current) return;
-      setCases(await client.listCases());
+      const expectedAccountId = user?.id;
+      let nextCases: PrivateCase[] | null = null;
+      try {
+        if (expectedAccountId !== undefined) {
+          nextCases = await listVerifiedCases(expectedAccountId);
+        }
+      } catch {
+        nextCases = null;
+      }
       if (requestId.current !== current) return;
+      if (nextCases !== null) setCases(nextCases);
+      if (nextCases === null) {
+        await reconcileMismatchedIdentity(current);
+        if (requestId.current !== current) return;
+      }
       if (selectedRef.current === selected.id) selectCase(null);
       if (selectedRef.current === null) {
-        setMessage({ kind: 'status', text: 'Case and its documents were deleted from live storage.' });
+        setMessage(
+          nextCases === null
+            ? {
+                kind: 'error',
+                text: 'The case was deleted, but the refreshed list could not be verified. Refresh before continuing.',
+              }
+            : { kind: 'status', text: 'Case and its documents were deleted from live storage.' },
+        );
       }
     } catch (error) {
       if (requestId.current !== current) return;
@@ -278,16 +392,23 @@ export default function CasesPage({ client = casesClient }: CasesPageProps): JSX
         setFile(null);
         setFileInputVersion((version) => version + 1);
       }
-      await reloadSelected(selected.id);
+      const refreshed = await reloadSelected(selected.id);
       if (requestId.current !== current) return;
       if (selectedRef.current === selected.id) {
-        setMessage({ kind: 'status', text: 'Document uploaded and encrypted.' });
+        setMessage(
+          refreshed
+            ? { kind: 'status', text: 'Document uploaded and encrypted.' }
+            : {
+                kind: 'error',
+                text: 'The upload completed, but the refreshed list could not be verified. Refresh before continuing.',
+              },
+        );
       }
     } catch (error) {
       if (requestId.current !== current) return;
       if (isAmbiguousMutation(error)) {
         const stillSelected = selectedRef.current === selected.id;
-        await showServerState(current);
+        await showServerState(current, { renderCases: false });
         if (requestId.current !== current) return;
         if (stillSelected && selectedRef.current === selected.id) {
           setFile(null);
@@ -299,7 +420,10 @@ export default function CasesPage({ client = casesClient }: CasesPageProps): JSX
         }
         return;
       }
-      await handleError(error, current);
+      // A definite upload error belongs to the case that initiated it; do not
+      // show its message under another case. Identity reconciliation still runs.
+      const sameCase = selectedRef.current === selected.id;
+      await handleError(error, current, { suppressMessage: !sameCase });
     } finally {
       if (requestId.current === current) setBusy(null);
     }
@@ -341,11 +465,25 @@ export default function CasesPage({ client = casesClient }: CasesPageProps): JSX
     try {
       await client.deleteDocument(selected.id, document.id, csrfToken);
       if (requestId.current !== current) return;
-      await reloadSelected(selected.id);
-      if (requestId.current !== current) return;
       setConfirmDocument(null);
+      // The deletion is confirmed; remove it from local display even if the
+      // subsequent refresh cannot be verified.
       if (selectedRef.current === selected.id) {
-        setMessage({ kind: 'status', text: 'Document deleted from live storage.' });
+        setDocuments((previous) =>
+          previous === null ? previous : previous.filter((item) => item.id !== document.id),
+        );
+      }
+      const refreshed = await reloadSelected(selected.id);
+      if (requestId.current !== current) return;
+      if (selectedRef.current === selected.id) {
+        setMessage(
+          refreshed
+            ? { kind: 'status', text: 'Document deleted from live storage.' }
+            : {
+                kind: 'error',
+                text: 'The document was deleted, but the refreshed list could not be verified. Refresh before continuing.',
+              },
+        );
       }
     } catch (error) {
       if (requestId.current !== current) return;
@@ -356,7 +494,11 @@ export default function CasesPage({ client = casesClient }: CasesPageProps): JSX
     }
   }
 
-  async function handleError(error: unknown, current: number): Promise<void> {
+  async function handleError(
+    error: unknown,
+    current: number,
+    options: { suppressMessage?: boolean } = {},
+  ): Promise<void> {
     if (needsAuthoritativeCheck(error)) {
       try {
         const currentUser = await client.me();
@@ -369,6 +511,8 @@ export default function CasesPage({ client = casesClient }: CasesPageProps): JSX
         // Keep identity and report uncertainty when reconciliation is unavailable.
       }
     }
+    if (options.suppressMessage) return;
+    if (requestId.current !== current) return;
     setMessage({ kind: 'error', text: errorText(error) });
   }
 
