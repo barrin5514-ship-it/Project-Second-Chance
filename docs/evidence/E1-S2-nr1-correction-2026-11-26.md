@@ -50,4 +50,3 @@ The earlier BLOCKED attempts remain recorded in `.bglad/state/e1-s2-task01-nr1-r
 Only NR-1 was addressed. NR-2 through NR-8, the browser-artifact gate, owner decisions on key/retention/readiness and the GitHub publication blocker remain open. The existing uncommitted corrections and historical evidence were preserved. No E1-S3 work was started.
 
 **Status: Task 01 implementation and independent gate PASSED; E1-S2 is not approved and no merge is claimed.** Owner merge approval and the remaining findings/decisions stay separate.
-
