@@ -71,7 +71,14 @@ const server = createServer(app).listen(PORT, LOOPBACK_HOST, () => {
 });
 
 function shutdown(): void {
-  privateStore?.store.reconcile();
+  try {
+    privateStore?.store.reconcile();
+  } catch (error) {
+    // Reconciliation can fail closed when managed storage is unavailable.
+    // Report a sanitized code, but still close the database and HTTP server.
+    const code = error instanceof PrivateStorageError ? error.code : 'unavailable';
+    console.error(`[api] Shutdown storage cleanup unavailable (${code}); closing remaining resources.`);
+  }
   auth.close();
   server.close(() => {
     process.exit(0);
