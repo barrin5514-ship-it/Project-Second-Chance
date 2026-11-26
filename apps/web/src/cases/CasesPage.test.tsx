@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import CasesPage from './CasesPage';
 import {
@@ -496,21 +496,52 @@ describe('private cases page: switching and session safety', () => {
   });
 
   it('removes a confirmed deleted document even when the refresh fails', async () => {
+    const otherDocument = { ...DOC, id: 'doc_keep', originalName: 'keep.pdf' };
     const client = makeClient({
       listCases: vi.fn(async () => [CASE]),
       listCasesWithProvenance: vi
         .fn()
         .mockResolvedValueOnce({ accountId: USER.id, cases: [CASE] })
         .mockRejectedValue(new CasesRequestError(503, 'unavailable')),
-      listDocuments: vi.fn(async () => [DOC]),
+      listDocuments: vi.fn(async () => [DOC, otherDocument]),
     });
     const { user, first } = await openSingleCase(client);
     await user.click(first);
-    await user.click(await screen.findByRole('button', { name: /^delete document$/i }));
+
+    // Prove the document is actually rendered before deleting it. The row text
+    // combines name, MIME type and size, so an exact-name query is vacuous.
+    const targetRow = (await screen.findByText(/fictional\.pdf/)).closest('li');
+    expect(targetRow).not.toBeNull();
+    expect(within(targetRow as HTMLElement).getByText(/fictional\.pdf/)).toBeVisible();
+    expect(screen.getByText(/keep\.pdf/)).toBeVisible();
+    await user.click(
+      within(targetRow as HTMLElement).getByRole('button', { name: /^delete document$/i }),
+    );
     await user.click(screen.getByRole('button', { name: /confirm delete document/i }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/deleted/i);
-    expect(screen.queryByText(DOC.originalName)).not.toBeInTheDocument();
+    expect(screen.queryByText(/fictional\.pdf/)).not.toBeInTheDocument();
+    expect(screen.getByText(/keep\.pdf/)).toBeVisible();
+  });
+
+  it('keeps the document when deletion fails', async () => {
+    const client = makeClient({
+      listCases: vi.fn(async () => [CASE]),
+      listCasesWithProvenance: vi.fn(async () => ({ accountId: USER.id, cases: [CASE] })),
+      listDocuments: vi.fn(async () => [DOC]),
+      deleteDocument: vi.fn(async () => {
+        throw new CasesRequestError(503, 'unavailable');
+      }),
+    });
+    const { user, first } = await openSingleCase(client);
+    await user.click(first);
+    expect(await screen.findByText(/fictional\.pdf/)).toBeVisible();
+    await user.click(await screen.findByRole('button', { name: /^delete document$/i }));
+    await user.click(screen.getByRole('button', { name: /confirm delete document/i }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/unavailable|try again/i);
+    expect(screen.getByText(/fictional\.pdf/)).toBeVisible();
+    expect(client.deleteDocument).toHaveBeenCalledTimes(1);
   });
 
   it('rejects another account case list during initial loading', async () => {

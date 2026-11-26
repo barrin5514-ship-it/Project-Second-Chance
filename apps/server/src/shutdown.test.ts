@@ -183,11 +183,22 @@ async function runScenario(moveShard: boolean): Promise<{ code: number | null; s
   return result;
 }
 
-afterEach(() => {
+afterEach(async () => {
   for (const child of children.splice(0)) {
-    if (child.exitCode === null) child.kill();
+    if (child.exitCode === null) {
+      child.kill();
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(resolve, 5000);
+        child.once('exit', () => {
+          clearTimeout(timer);
+          resolve();
+        });
+      });
+    }
   }
-  for (const path of cleanup.splice(0)) rmSync(path, { recursive: true, force: true });
+  for (const path of cleanup.splice(0)) {
+    rmSync(path, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  }
 });
 
 describe('server shutdown with storage faults', () => {
@@ -231,6 +242,7 @@ describe('server shutdown with storage faults', () => {
     const restarted = start(runtime, restartedPort, preload);
     await waitForHealth(restartedPort, restarted);
     expect(readFileSync(join(runtime, 'private', '.psc-store-identity'))).toEqual(identity);
-    restarted.kill();
+    const restartedShutdown = await stop(restarted);
+    expect(restartedShutdown.code).toBe(0);
   }, 30000);
 });
