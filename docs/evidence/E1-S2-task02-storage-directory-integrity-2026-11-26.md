@@ -51,6 +51,12 @@ Claude independently reviewed the resulting source and returned **PASS**, checki
 
 Targeted reversion on the disposable copy removed the upload directory precondition and delete marker requirement: **3 failed / 19 passed**, matching the original RED tests. The copy was restored byte-for-byte and remained clean. State: `.bglad/state/e1-s2-task02-storage-final.json`, run `.bglad/runs/e1-s2-task02-storage-final-1795719442315/`.
 
+## Local checkpoint and build note
+
+- Task 02 application/evidence checkpoint: `a440516`.
+- Coordinator no-second-copy guard: `b0a7ae7`.
+- `npm run build` initially hit a sandbox-owned stale esbuild temp file under the user temp directory (`Access is denied`); rerunning with `TEMP`/`TMP` pointed at an ignored workspace temp directory passed (`✓ built`, exit 0). This is an environment artifact, not an application failure; no source workaround was added.
+
 ## Preservation and remaining gates
 
 - Only Task 02 storage behavior was changed; Task 01 regression coverage is preserved.
