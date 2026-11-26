@@ -73,6 +73,7 @@ State: `.bglad/state/e1-s2-task04-deletion-test-retry.json`, run `.bglad/runs/e1
 
 ## Checkpoint and preservation
 
+- Task 04 test/evidence checkpoint: `ac296f9`.
 - No application source changed. The scoped local checkpoint contains the test-only deletion correction, the Task 03 shutdown-test cleanup stabilization, and this report.
 - Task 01–03 application checkpoints and all historical evidence are preserved.
 - Owner runtime metadata: **10 files / 4,377,586 bytes**, hash `679F6FF1EE54B73FBB2862D8A2A0AC28E767325F0E5B5F9BD965A4428FAB29B1`, unchanged.
