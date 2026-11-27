@@ -216,7 +216,12 @@ export function createPrivateRouter(options: {
   router.get('/api/cases', ...readAuth, (req, res) => {
     const ownerId = ownerOf(req);
     if (ownerId === null) return notFound(res);
-    res.status(200).json({ cases: store.listCases(ownerId).map(publicCase) });
+    res.status(200).json({
+      // Authenticated response provenance: lets a client reject a delayed list
+      // produced by an intermediate session.
+      accountId: ownerId,
+      cases: store.listCases(ownerId).map(publicCase),
+    });
   });
 
   router.post('/api/cases', ...mutateAuth, (req, res) => {
@@ -271,6 +276,7 @@ export function createPrivateRouter(options: {
       try {
         const ownerId = ownerOf(req);
         if (ownerId === null) return notFound(res);
+        if (res.headersSent || res.destroyed) return;
         if (req.file === undefined) {
           if (!auth.isAuthorized(req)) return auth.rejectUnauthorized(req, res);
           return invalid(res);
@@ -282,6 +288,10 @@ export function createPrivateRouter(options: {
             originalName: req.file.originalname,
           });
         } catch (error) {
+          // A 408/disconnect may already have ended the response. Never attempt
+          // a second terminal response or let its error reach Express's default
+          // stack-printing handler.
+          if (res.headersSent || res.destroyed) return;
           if (error instanceof UploadValidationError) {
             if (!auth.isAuthorized(req)) {
               auth.rejectUnauthorized(req, res);
@@ -291,6 +301,9 @@ export function createPrivateRouter(options: {
               error: error.code === 'too-large' ? 'payload-too-large' : 'invalid-upload',
             });
           }
+          // Unexpected validator/storage exceptions are still late responses:
+          // suppress a stale session cookie and recheck stored authorization.
+          if (!auth.isAuthorized(req)) return auth.rejectUnauthorized(req, res);
           return invalid(res);
         }
         // The window already answered 408, or the client went away: publishing
@@ -389,8 +402,7 @@ export function createPrivateRouter(options: {
   router.use(
     (error: unknown, req: Request, res: Response, next: NextFunction) => {
       releaseUpload(res);
-      if (res.headersSent) {
-        next(error);
+      if (res.headersSent || res.destroyed) {
         return;
       }
       res.setHeader('Cache-Control', 'no-store');

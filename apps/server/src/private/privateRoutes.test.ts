@@ -164,12 +164,13 @@ describe('private cases and documents API', () => {
 
     const aliceList = await alice.agent.get('/api/cases').set('Host', HOST);
     expect(aliceList.status).toBe(200);
+    expect(aliceList.body).toMatchObject({ accountId: alice.id });
     expect(JSON.stringify(aliceList.body)).toContain('Alice private canary');
     expect(aliceList.body).not.toHaveProperty('cases.0.ownerId');
 
     const bobList = await bob.agent.get('/api/cases').set('Host', HOST);
     expect(bobList.status).toBe(200);
-    expect(bobList.body).toEqual({ cases: [] });
+    expect(bobList.body).toEqual({ accountId: bob.id, cases: [] });
 
     for (const path of [
       `/api/cases/${caseId}`,
