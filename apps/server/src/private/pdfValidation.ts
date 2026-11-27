@@ -39,10 +39,16 @@ export async function validatePdfInWorker(
       if (settled) return;
       settled = true;
       if (timer !== undefined) clearTimeout(timer);
-      void worker.terminate();
-      if (error !== null) reject(error);
-      else if (result !== undefined) resolve(result);
-      else reject(new PdfValidationError('unavailable'));
+      // Await the exit acknowledgement before settling. The upload slot is
+      // released when this promise settles, so it must represent real work end.
+      void worker
+        .terminate()
+        .catch(() => undefined)
+        .then(() => {
+          if (error !== null) reject(error);
+          else if (result !== undefined) resolve(result);
+          else reject(new PdfValidationError('unavailable'));
+        });
     };
 
     timer = setTimeout(() => finish(new PdfValidationError('timeout')), timeoutMs);
@@ -59,8 +65,8 @@ export async function validatePdfInWorker(
       finish(new PdfValidationError('invalid'));
     });
     worker.once('error', () => finish(new PdfValidationError('invalid')));
-    worker.once('exit', (code) => {
-      if (!settled && code !== 0) finish(new PdfValidationError('invalid'));
+    worker.once('exit', () => {
+      if (!settled) finish(new PdfValidationError('invalid'));
     });
   });
 }
