@@ -31,6 +31,16 @@ describe('auth runtime settings', () => {
     );
   });
 
+  it('rejects E2E mode without an isolated runtime before touching the project runtime', () => {
+    const root = tempRoot();
+    expect(() =>
+      loadAuthSettings(root, { PSC_E2E_NO_KEY: '1', PSC_E2E_AUTH_RELAXED: '1' }),
+    ).toThrow(/PSC_RUNTIME_DIR/);
+    expect(() => loadAuthSettings(root, { PSC_E2E_AUTH_RELAXED: '1' })).toThrow(
+      /PSC_RUNTIME_DIR/,
+    );
+  });
+
   it('fails closed for an existing short secret instead of replacing it', () => {
     const root = tempRoot();
     loadAuthSettings(root);
