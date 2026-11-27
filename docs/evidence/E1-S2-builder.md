@@ -1,5 +1,7 @@
 # E1-S2 builder evidence — private cases and encrypted documents
 
+> **Evidence-integrity restoration — November 27, 2026.** The “Final checks” and CV-cycle totals in this historical report were overwritten during later work with the then-current suite totals. They have been restored from Git and the preserved independent reports; see `E1-S2-history-restoration-2026-11-27.md`. Current totals belong in the dated later sections, not in earlier run records.
+
 Builder: DeepSeek. Status: **IMPLEMENTED AND BUILDER-VERIFIED — STOPPED FOR CODEX INDEPENDENT TESTING AND ACTUAL CLAUDE REVIEW.** This is not independent verification, a security certification or merge approval. Fictional data only. No real records, uploads, private cases, hosted deployment, paid service, external message or live provider session was used. The real `.env` was not read or disclosed.
 
 ## Identity and base
@@ -58,6 +60,18 @@ Verification disposition for the 18 listed findings:
 ## Corrective cycle — Claude final review (`3600dd6`)
 
 Claude's final review requested changes F1–F11. The corrective implementation and evidence are in `E1-S2-corrective-2026-11-25.md`. Summary: PDF parsing moved to a 64 MiB/3s worker; store identity binds DB/data dir; missing required blob is a deletion error; ambiguous uploads reconcile and do not advise retry; upload slots represent actual work lifetime; all late responses recheck session/cookie; raw bidi controls replaced with escapes + source scan; PDF final-EOF rule tightened; key creation exclusive/fsynced; `/api/ready` distinguishes readiness; quota counts persisted rows. Browser tests now use an isolated runtime; owner runtime metadata was unchanged. The browser artifact-byte gate remains blocked.
+
+## CR-5-R1 directory-availability correction
+
+Codex focused retest found reconciliation still treated a missing blob root/shard as individual-file loss. Maintained RED: root and shard tests failed because reconciliation did not throw and marked intact docs `error`. Reconciliation now verifies root and shard directories with `lstat`; unavailable directories throw closed without row mutation, while verified file `ENOENT` remains missing/deletable. Focused independent suite is **19/19**; maintained suite **376/34**, API **227/20**, browser **56/56**. GitHub report corrected: six tracked files on both published refs contain absolute owner paths; main has 26 commits, published feature 29, local HEAD 32. No history rewrite or publication was performed.
+
+## CV-3-R2 corrective follow-up (reconstructed wording; numeric facts from Codex reports)
+
+Codex's provenance retest found five successful-mutation paths (create/edit/upload/document-delete/case-delete) that reloaded cases without checking provenance. Prospective RED: provenance suite **11 passed / 5 failed**, all five logging `displayedBCase:true`. The builder added a single verified-list boundary, made `reloadSelected` check provenance and request generation before `setCases`/`setDocuments`, moved case-delete to the same helper, and retained known state with a non-verification message when provenance is unavailable/mismatched. Provenance suite now **16/16**; seven original CV assertions **7/7**; CV-3-R1 retest **3/3**. Codex independent retest observed maintained **348/32**, API **213/18**, browser **56/56** this run. The later 34-file counts include additional maintained files; the exact 32→34 cause is not reconstructed. Original independent suite remains **9/11**; supplementary remains **27/28** due the preserved post-exit worker assertion.
+
+## CV corrective cycle — Codex verification (`03b1bb8`) (reconstructed wording; numeric facts from `E1-S2-corrective-cv-2026-11-25.md`)
+
+Codex's supplementary probes confirmed six issue groups. Builder captured prospective RED (10 failed / 18 passed in the repository; the seven CV assertions plus fixture-only startup/legacy setup failures) and fixed: E2E mode/runtime and inherited narrow-path guards; lstat-consistent deletion; `/me` before ambiguous refresh; unexpected-exception late-session recheck; selection-scoped definite upload errors; and worker-exit acknowledgement before validation settles. Targeted CV probes pass **7/7**. The supplementary full suite is **27/28** in a disposable copy; the remaining failure reads native `worker.resourceLimits` after exit, which Node clears, and directly conflicts with CV-6. It is preserved, not edited. Maintained suite was **374/34**, API **225/20** for this CV run; this run's isolated browser suite passed **56/56**, with Codex's prior 54/2 navigation run retained as a reproducibility gap. Original independent suite remains **9/11**. Browser artifact bytes remain **BLOCKED**.
 
 ## Proposed settings (pending owner approval)
 

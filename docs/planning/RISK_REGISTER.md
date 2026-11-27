@@ -56,6 +56,10 @@ Builder evidence: `../evidence/E1-S2-builder.md`; spec: `../../_bmad-output/impl
 
 No risk is closed by E1-S2. Independent Codex testing and actual Claude review are pending; no merge, push or deployment occurred.
 
+## E1-S2 historical evidence restoration — 2026-11-27
+
+The E1-S2 corrective-cycle totals below were previously overwritten with later suite totals. They have been restored from the preserved `E1-S2-corrective-2026-11-25.md`, `E1-S2-codex-cv3-provenance-retest-2026-11-25.md`, `E1-S2-codex-cv3-r2-retest-2026-11-25.md`, `E1-S2-corrective-cv-2026-11-25.md` and Git history. See `../evidence/E1-S2-history-restoration-2026-11-27.md`. Historical failures and open gates are unchanged.
+
 ## E1-S2 corrective-cycle update — 2026-11-25
 
 Evidence: `../evidence/E1-S2-corrective-2026-11-25.md`; previous builder evidence preserved. Builder ran **347 unit/API/component tests (32 files, 0 failed)**, **213 API tests**, **56 isolated Playwright tests**, the preserved probes and **9/11** preserved Codex independent probes. The two Codex failures are stale expectations: immediate slot release on disconnect (F6 now holds the slot for actual work) and acceptance of the old incremental-PDF truncation (FIX H now rejects appended junk). They are not represented as passing. Browser artifact-byte verification remains **BLOCKED** on Windows/EPERM.
@@ -68,6 +72,24 @@ Evidence: `../evidence/E1-S2-corrective-2026-11-25.md`; previous builder evidenc
 - **R21/R08:** no hosted/TLS or real-record activation. **OPEN.**
 
 Pending owner decisions: permanent concurrency value, minimum Node version, historical TDD gaps, residual PDF boundary, browser-artifact disposition, and any identity-migration/readiness architecture. No merge, push or deployment occurred.
+
+## E1-S2 CV corrective update — 2026-11-25
+
+Codex's supplementary verification of `03b1bb8` confirmed six issue groups. Builder captured prospective RED (10 failed / 18 passed in the repository; the seven targeted CV assertions plus fixture-only startup/legacy setup failures) and corrected:
+
+- **CV-1 (R23/R25):** E2E mode without `PSC_RUNTIME_DIR` now fails closed; Playwright explicitly overrides inherited narrow data/key paths; preflight checks all three. Isolation probe **5/5**.
+- **CV-2 (R18/R19/R25):** deletion no longer treats boolean `exists=false` as absence when `lstat` sees ciphertext; verified ENOENT only can reach terminal logical deletion. Stat-unavailable retry returns 503 with ciphertext/row preserved; genuine-absence retry reaches 204.
+- **CV-3/CV-5 (R05/R11/R20/R25):** ambiguous reconciliation rechecks `/me` and now uses authenticated case-list `accountId` provenance before rendering; if provenance is unavailable it fails closed (known cases retained, only selected-case documents refreshed). Definite upload errors are selection-scoped. The CV-3-R2 follow-up verifies provenance on every successful create/edit/upload/delete refresh and request generation before `setCases`; independent provenance suite **16/16**, CV-3-R1 retest **3/3**, seven original CV assertions **7/7**. A real multi-tab browser reproduction remains untested; fallback clients without provenance retain a narrower window.
+- **CR-5-R1 (R18/R19/R25):** reconciliation now verifies the blob root and each shard directory before interpreting file-level `ENOENT` as individual loss; unavailable directories throw closed without changing rows. Focused independent suite **19/19**; maintained **376/34**, API **227/20**, browser **56/56** for this later run; genuine missing-file/deletion and startup-root controls remain green. This is not recovery, migration or backup.
+- **CV-4 (R05/R11):** unexpected validation exceptions follow the same late-session/cookie policy. Probe returns 401/no cookie/no row.
+- **CV-6 (R13/R25):** validation awaits worker termination before settling/releasing the slot. Probe reports `validationSettledBeforeWorkerExit:false`. A separate supplementary worker assertion that reads native `worker.resourceLimits` after exit fails because Node clears that property on exit; it is preserved, not edited. Full supplementary suite: **27/28**.
+- **Preserved original independent suite:** **9/11** unchanged; immediate-disconnect-release and old PDF-acceptance assertions remain expected failures, not restored.
+- **Maintained:** 374 tests / 34 files; API 225 / 20; isolated browser 56/56 in this run. Codex's prior full-browser run was 54/2 at account navigation; all three results are preserved as a reproducibility gap.
+- **Browser artifact bytes:** BLOCKED (EPERM; no-app control). No waiver.
+- **Key durability:** file fsync only; no key-directory fsync. Do not claim full crash durability.
+- **Readiness/quota:** `/api/ready` is implemented but its policy is pending; quota refusal remains generic and best-effort.
+
+No risk is closed. No commit, merge, push or deployment was made in this CV cycle.
 
 Current delivery update — November 24, 2026: E0-S2 at `295d413` passed fresh Codex re-verification and actual Claude follow-up. The owner approved local main merge `c2a1dca`; see `../evidence/E0-S2-merge-result.md`. Research does not mitigate future legal/court access risks or authorize real records. E1-S1 now investigates/implements R05/R11/R23 with R07/R09/R10/R20/R21/R24/R25 as supporting boundaries; all authentication-specific controls remain **OPEN** until tested and independently reviewed. See `../stories/E1-S1-authentication.md`. Existing foundation-scoped results and deferred research P3 notes remain historical evidence, not guarantees for new code.
 
