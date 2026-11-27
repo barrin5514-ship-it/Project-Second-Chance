@@ -8,6 +8,12 @@ const failures = [];
 if (!config.includes('PSC_RUNTIME_DIR: isolatedRuntime')) {
   failures.push('Playwright API server does not set PSC_RUNTIME_DIR');
 }
+if (!config.includes('PSC_PRIVATE_DATA_DIR: resolve(isolatedRuntime, \'private\')')) {
+  failures.push('Playwright does not neutralize inherited PSC_PRIVATE_DATA_DIR');
+}
+if (!config.includes('PSC_PRIVATE_KEY_DIR: resolve(isolatedRuntime, \'keys\')')) {
+  failures.push('Playwright does not neutralize inherited PSC_PRIVATE_KEY_DIR');
+}
 if (!config.includes("'test-results'") || !config.includes('e2e-runtime-')) {
   failures.push('Playwright isolated runtime is not under test-results/e2e-runtime-<pid>');
 }

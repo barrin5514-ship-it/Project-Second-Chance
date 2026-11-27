@@ -63,6 +63,10 @@ export default defineConfig({
         PSC_E2E_AUTH_RELAXED: '1',
         // Isolate auth DB/session secret, private keys and blobs together.
         PSC_RUNTIME_DIR: isolatedRuntime,
+        // Explicitly neutralize inherited narrow overrides too; PSC_RUNTIME_DIR
+        // alone cannot outrank an inherited PSC_PRIVATE_DATA_DIR/KEY_DIR.
+        PSC_PRIVATE_DATA_DIR: resolve(isolatedRuntime, 'private'),
+        PSC_PRIVATE_KEY_DIR: resolve(isolatedRuntime, 'keys'),
         PORT: '3001',
       },
     },

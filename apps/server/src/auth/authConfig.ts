@@ -2,6 +2,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'n
 import { randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { join, resolve } from 'node:path';
+import { assertE2EIsolation } from '../testIsolation';
 
 export interface AuthRuntimeSettings {
   databasePath: string;
@@ -19,6 +20,14 @@ export function loadAuthSettings(
   root = PROJECT_ROOT,
   env: NodeJS.ProcessEnv = process.env,
 ): AuthRuntimeSettings {
+  if (
+    (env['PSC_E2E_NO_KEY'] === '1' || env['PSC_E2E_AUTH_RELAXED'] === '1') &&
+    !env['PSC_RUNTIME_DIR']
+  ) {
+    // Test mode must never fall back to the project owner runtime.
+    throw new Error('E2E mode requires PSC_RUNTIME_DIR');
+  }
+  assertE2EIsolation(root, env);
   const runtimeDir = env['PSC_RUNTIME_DIR']
     ? resolve(env['PSC_RUNTIME_DIR'])
     : join(root, 'runtime');

@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join, resolve } from 'node:path';
+import { assertE2EIsolation } from '../testIsolation';
 import type Database from 'better-sqlite3';
 import { loadPrivateKeys, type PrivateKeys } from './crypto';
 import { createPrivateStore, PrivateStorageError, type PrivateStore } from './privateStore';
@@ -13,6 +14,13 @@ export interface PrivatePaths {
 }
 
 export function loadPrivatePaths(root = PROJECT_ROOT, env = process.env): PrivatePaths {
+  if (
+    (env['PSC_E2E_NO_KEY'] === '1' || env['PSC_E2E_AUTH_RELAXED'] === '1') &&
+    !env['PSC_RUNTIME_DIR']
+  ) {
+    throw new Error('E2E mode requires PSC_RUNTIME_DIR');
+  }
+  assertE2EIsolation(root, env);
   const runtimeRoot = env['PSC_RUNTIME_DIR']
     ? resolve(env['PSC_RUNTIME_DIR'])
     : join(root, 'runtime');
