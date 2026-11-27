@@ -14,6 +14,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import request from 'supertest';
+import { Router } from 'express';
 import { PDFDocument } from 'pdf-lib';
 import { createApp, LOCAL_ORIGINS } from '../app';
 import { AttemptRegistry } from '../avatar/attemptRegistry';
@@ -48,6 +49,21 @@ interface Harness {
   auth: AuthDependencies;
   store: PrivateStore;
   app: ReturnType<typeof createApp>;
+  responseMetrics?: {
+    writeHead: number;
+    duplicateWriteHead: number;
+    end: number;
+    duplicateEnd: number;
+    write: number;
+    duplicateWrite: number;
+    writeAfterClose: number;
+    statusAfterHeaders: number;
+    statusAfterClose: number;
+    headerAfterHeaders: number;
+    headerAfterClose: number;
+    close: number;
+    closedPaths: string[];
+  };
 }
 
 const open: Harness[] = [];
@@ -64,6 +80,7 @@ function harness(options: {
   now?: () => number;
   absoluteTtlMs?: number;
   unavailablePrivate?: boolean;
+  instrumentResponses?: boolean;
 } = {}): Harness {
   const root = mkdtempSync(join(tmpdir(), 'psc-private-hardening-'));
   const dataDir = join(root, 'private');
@@ -76,6 +93,84 @@ function harness(options: {
   });
   const keys = loadPrivateKeys(keyDir, { allowCreate: true });
   const store = createPrivateStore({ db: auth.accountStore.db, keys, dataDir });
+  const metrics = {
+    writeHead: 0,
+    duplicateWriteHead: 0,
+    end: 0,
+    duplicateEnd: 0,
+    write: 0,
+    duplicateWrite: 0,
+    writeAfterClose: 0,
+    statusAfterHeaders: 0,
+    statusAfterClose: 0,
+    headerAfterHeaders: 0,
+    headerAfterClose: 0,
+    close: 0,
+    closedPaths: [] as string[],
+  };
+  let privateRouter = options.unavailablePrivate
+    ? createUnavailablePrivateRouter(auth)
+    : createPrivateRouter({ auth, store });
+  if (options.instrumentResponses) {
+    const instrumented = Router();
+    instrumented.use((_req, res, next) => {
+      const path = `${_req.method} ${_req.path}`;
+      let closed = false;
+      res.once('close', () => {
+        closed = true;
+        metrics.close += 1;
+        metrics.closedPaths.push(path);
+      });
+      const originalWriteHead = res.writeHead;
+      const originalStatus = res.status;
+      const originalWrite = res.write;
+      const originalSetHeader = res.setHeader;
+      const originalEnd = res.end;
+      (res as unknown as { setHeader: (...args: unknown[]) => unknown }).setHeader = (
+        ...args: unknown[]
+      ) => {
+        if (res.headersSent) metrics.headerAfterHeaders += 1;
+        if (closed) metrics.headerAfterClose += 1;
+        return Reflect.apply(originalSetHeader, res, args);
+      };
+      (res as unknown as { status: (...args: unknown[]) => unknown }).status = (
+        ...args: unknown[]
+      ) => {
+        if (res.headersSent) metrics.statusAfterHeaders += 1;
+        if (closed) metrics.statusAfterClose += 1;
+        return Reflect.apply(originalStatus, res, args);
+      };
+      (res as unknown as { write: (...args: unknown[]) => unknown }).write = (
+        ...args: unknown[]
+      ) => {
+        metrics.write += 1;
+        if (res.writableEnded) metrics.duplicateWrite += 1;
+        if (closed) metrics.writeAfterClose += 1;
+        return Reflect.apply(originalWrite, res, args);
+      };
+      (res as unknown as { writeHead: (...args: unknown[]) => unknown }).writeHead = (
+        ...args: unknown[]
+      ) => {
+        metrics.writeHead += 1;
+        // A second writeHead after headers are already committed is the
+        // duplicate-response condition; a first implicit call is legitimate.
+        if (res.headersSent) metrics.duplicateWriteHead += 1;
+        if (closed) metrics.writeAfterClose += 1;
+        return Reflect.apply(originalWriteHead, res, args);
+      };
+      (res as unknown as { end: (...args: unknown[]) => unknown }).end = (
+        ...args: unknown[]
+      ) => {
+        metrics.end += 1;
+        if (res.writableEnded) metrics.duplicateEnd += 1;
+        if (closed) metrics.writeAfterClose += 1;
+        return Reflect.apply(originalEnd, res, args);
+      };
+      next();
+    });
+    instrumented.use(privateRouter);
+    privateRouter = instrumented;
+  }
   const app = createApp({
     hasApiKey: false,
     readApiKey: () => null,
@@ -85,14 +180,10 @@ function harness(options: {
     registry: new AttemptRegistry({ clock: { now: () => Date.now() }, tokenTtlMs: 60_000 }),
     clock: { now: () => Date.now() },
     auth,
-    privateDocuments: {
-      router: options.unavailablePrivate
-        ? createUnavailablePrivateRouter(auth)
-        : createPrivateRouter({ auth, store }),
-    },
+    privateDocuments: { router: privateRouter },
     privateReady: () => !options.unavailablePrivate,
   });
-  const h = { root, dataDir, keyDir, auth, store, app };
+  const h = { root, dataDir, keyDir, auth, store, app, responseMetrics: metrics };
   open.push(h);
   return h;
 }
@@ -184,6 +275,25 @@ function gateValidationCount(count: number): { entered: Promise<void>; release: 
   return { entered, release };
 }
 
+/** After a late/failed upload, prove both upload slots are actually free. */
+async function expectTwoSlotsReleased(
+  owner: Awaited<ReturnType<typeof signIn>>,
+  caseId: string,
+  label: string,
+): Promise<void> {
+  const gate = gateValidationCount(2);
+  const first = owner.upload(caseId, PNG, `${label}-slot-one.png`).then((response) => response);
+  const second = owner.upload(caseId, PNG, `${label}-slot-two.png`).then((response) => response);
+  const bothEntered = await Promise.race([
+    gate.entered.then(() => true),
+    new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 2000)),
+  ]);
+  gate.release();
+  const responses = await Promise.all([first, second]);
+  expect(bothEntered).toBe(true);
+  expect(responses.map((response) => response.status)).toEqual([201, 201]);
+}
+
 describe('authorization is rechecked before publication', () => {
   it('does not publish when the session is logged out while the upload is pending', async () => {
     const h = harness();
@@ -213,6 +323,37 @@ describe('authorization is rechecked before publication', () => {
 
     // A late Set-Cookie could overwrite a newer sign-in in the same browser.
     expect((await pending).headers['set-cookie']).toBeUndefined();
+  });
+
+  it('does not re-send a logged-out cookie on an unexpected validation exception', async () => {
+    const h = harness();
+    const owner = await signIn(h);
+    const caseId = await owner.createCase();
+    let entered!: () => void;
+    let release!: () => void;
+    const arrived = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    vi.spyOn(validation, 'validateUpload').mockImplementation(async () => {
+      entered();
+      await gate;
+      throw new Error('fictional unexpected validator failure');
+    });
+
+    const pending = owner.upload(caseId, PNG, 'late-unexpected.png').then(
+      (response) => response,
+    );
+    await arrived;
+    await owner.post('/api/auth/logout', owner.token, {});
+    release();
+
+    const response = await pending;
+    expect(response.status).toBe(401);
+    expect(response.headers['set-cookie']).toBeUndefined();
+    expect(documentRows(h)).toBe(0);
   });
 
   it('does not re-send a logged-out cookie on a late validation failure', async () => {
@@ -311,6 +452,190 @@ describe('authorization is rechecked before publication', () => {
 
     expect(documentRows(h)).toBe(0);
   });
+
+  it('does not attempt a second response when validation fails after the 408', async () => {
+    const h = harness({ instrumentResponses: true });
+    const owner = await signIn(h);
+    const caseId = await owner.createCase();
+    let entered!: () => void;
+    let release!: () => void;
+    const arrived = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    vi.spyOn(validation, 'validateUpload').mockImplementation(async () => {
+      entered();
+      await gate;
+      throw new validation.UploadValidationError('invalid');
+    });
+    const realSetTimeout = globalThis.setTimeout;
+    let expire: (() => void) | undefined;
+    vi.spyOn(globalThis, 'setTimeout').mockImplementation(((
+      callback: () => void,
+      delay?: number,
+    ) => {
+      if (delay === 30_000) expire = callback;
+      return realSetTimeout(callback, delay);
+    }) as typeof setTimeout);
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    const pending = owner.upload(caseId, PNG, 'late-invalid-after-408.png').then(
+      (response) => response,
+    );
+    await arrived;
+    expire!();
+    expect((await pending).status).toBe(408);
+    release();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    expect(errors).not.toHaveBeenCalled();
+    expect(h.responseMetrics?.duplicateWriteHead).toBe(0);
+    expect(h.responseMetrics?.duplicateEnd).toBe(0);
+    expect(h.responseMetrics?.statusAfterHeaders).toBe(0);
+    expect(h.responseMetrics?.statusAfterClose).toBe(0);
+    expect(h.responseMetrics?.headerAfterHeaders).toBe(0);
+    expect(h.responseMetrics?.headerAfterClose).toBe(0);
+    expect(h.responseMetrics?.writeAfterClose).toBe(0);
+    expect(h.responseMetrics?.duplicateWrite).toBe(0);
+    expect(documentRows(h)).toBe(0);
+    vi.restoreAllMocks();
+    await expectTwoSlotsReleased(owner, caseId, 'after-late-failure');
+  });
+
+  it('does not attempt a second response when validation succeeds after the 408', async () => {
+    const h = harness({ instrumentResponses: true });
+    const owner = await signIn(h);
+    const caseId = await owner.createCase();
+    const gate = gateValidation();
+    const realSetTimeout = globalThis.setTimeout;
+    let expire: (() => void) | undefined;
+    vi.spyOn(globalThis, 'setTimeout').mockImplementation(((
+      callback: () => void,
+      delay?: number,
+    ) => {
+      if (delay === 30_000) expire = callback;
+      return realSetTimeout(callback, delay);
+    }) as typeof setTimeout);
+
+    const pending = owner.upload(caseId, PNG, 'late-success-after-408.png').then(
+      (response) => response,
+    );
+    await gate.entered;
+    expire!();
+    expect((await pending).status).toBe(408);
+    gate.release();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    expect(h.responseMetrics?.duplicateWriteHead).toBe(0);
+    expect(h.responseMetrics?.duplicateEnd).toBe(0);
+    expect(h.responseMetrics?.statusAfterHeaders).toBe(0);
+    expect(h.responseMetrics?.statusAfterClose).toBe(0);
+    expect(h.responseMetrics?.headerAfterHeaders).toBe(0);
+    expect(h.responseMetrics?.headerAfterClose).toBe(0);
+    expect(h.responseMetrics?.writeAfterClose).toBe(0);
+    expect(h.responseMetrics?.duplicateWrite).toBe(0);
+    expect(documentRows(h)).toBe(0);
+    vi.restoreAllMocks();
+    await expectTwoSlotsReleased(owner, caseId, 'after-late-success');
+  });
+
+  it('does not write after a client disconnects during late validation', async () => {
+    const h = harness({ instrumentResponses: true });
+    const owner = await signIn(h);
+    const caseId = await owner.createCase();
+    const gate = gateValidation();
+    const pending = owner.upload(caseId, PNG, 'disconnected-late.png');
+    const settled = pending.then(
+      () => null,
+      () => null,
+    );
+    await gate.entered;
+    pending.abort();
+    for (
+      let attempt = 0;
+      attempt < 100 &&
+      !(h.responseMetrics?.closedPaths.some((path) => path.endsWith('/documents')) ?? false);
+      attempt += 1
+    ) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 10));
+    }
+    expect(h.responseMetrics?.close).toBeGreaterThan(0);
+    expect(
+      h.responseMetrics?.closedPaths.some((path) => path.endsWith('/documents')),
+    ).toBe(true);
+    gate.release();
+    await Promise.race([settled, new Promise<void>((resolve) => setTimeout(resolve, 1000))]);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    expect(h.responseMetrics?.writeAfterClose).toBe(0);
+    expect(h.responseMetrics?.duplicateWriteHead).toBe(0);
+    expect(h.responseMetrics?.duplicateEnd).toBe(0);
+    expect(h.responseMetrics?.statusAfterHeaders).toBe(0);
+    expect(h.responseMetrics?.statusAfterClose).toBe(0);
+    expect(h.responseMetrics?.headerAfterHeaders).toBe(0);
+    expect(h.responseMetrics?.headerAfterClose).toBe(0);
+    expect(h.responseMetrics?.duplicateWrite).toBe(0);
+    expect(documentRows(h)).toBe(0);
+    await expectTwoSlotsReleased(owner, caseId, 'after-disconnect');
+    vi.restoreAllMocks();
+  });
+
+  it('does not attempt a second response when logout follows a 408 and validation then fails', async () => {
+    const h = harness({ instrumentResponses: true });
+    const owner = await signIn(h);
+    const caseId = await owner.createCase();
+    let entered!: () => void;
+    let release!: () => void;
+    const arrived = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    vi.spyOn(validation, 'validateUpload').mockImplementation(async () => {
+      entered();
+      await gate;
+      throw new Error('fictional unexpected validator failure');
+    });
+    const realSetTimeout = globalThis.setTimeout;
+    let expire: (() => void) | undefined;
+    vi.spyOn(globalThis, 'setTimeout').mockImplementation(((
+      callback: () => void,
+      delay?: number,
+    ) => {
+      if (delay === 30_000) expire = callback;
+      return realSetTimeout(callback, delay);
+    }) as typeof setTimeout);
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    const pending = owner.upload(caseId, PNG, 'late-error-after-408.png').then(
+      (response) => response,
+    );
+    await arrived;
+    expire!();
+    expect((await pending).status).toBe(408);
+    await owner.post('/api/auth/logout', owner.token, {});
+    release();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    expect(errors).not.toHaveBeenCalled();
+    expect(h.responseMetrics?.duplicateWriteHead).toBe(0);
+    expect(h.responseMetrics?.duplicateEnd).toBe(0);
+    expect(h.responseMetrics?.statusAfterHeaders).toBe(0);
+    expect(h.responseMetrics?.statusAfterClose).toBe(0);
+    expect(h.responseMetrics?.headerAfterHeaders).toBe(0);
+    expect(h.responseMetrics?.headerAfterClose).toBe(0);
+    expect(h.responseMetrics?.writeAfterClose).toBe(0);
+    expect(h.responseMetrics?.duplicateWrite).toBe(0);
+    expect(documentRows(h)).toBe(0);
+    expect((await owner.get('/api/health')).status).toBe(200);
+    vi.restoreAllMocks();
+    const resumed = await signIn(h, 'review@example.test');
+    await expectTwoSlotsReleased(resumed, caseId, 'after-logout-late-error');
+  });
 });
 
 describe('upload concurrency', () => {
@@ -334,9 +659,8 @@ describe('upload concurrency', () => {
     expect((await first).status).toBe(201);
     expect((await second).status).toBe(201);
 
-    const fourth = await owner.upload(caseId, PNG, 'fourth.png');
-    expect(fourth.status).toBe(201);
-    expect(documentRows(h)).toBe(3);
+    await expectTwoSlotsReleased(owner, caseId, 'after-concurrency-completion');
+    expect(documentRows(h)).toBe(4);
   });
   it('does not count a second account against the first account upload limit', async () => {
     const h = harness();
@@ -386,9 +710,8 @@ describe('upload concurrency', () => {
 
     gate.release();
     await new Promise<void>((resolve) => setImmediate(resolve));
-    const fourth = await owner.upload(caseId, PNG, 'timeout-four.png');
-    expect(fourth.status).toBe(201);
-    expect(documentRows(h)).toBe(1);
+    await expectTwoSlotsReleased(owner, caseId, 'after-timeout-release');
+    expect(documentRows(h)).toBe(2);
   });
 });
 
