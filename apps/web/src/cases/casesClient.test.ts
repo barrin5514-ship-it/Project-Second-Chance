@@ -28,6 +28,23 @@ describe('casesClient', () => {
     );
   });
 
+  it('exposes authenticated account provenance for reconciliation', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        json(200, {
+          accountId: 'usr_a',
+          cases: [{ id: 'case_a', label: 'Private', jurisdiction: null, status: 'ready' }],
+        }),
+      ),
+    );
+
+    await expect(casesClient.listCasesWithProvenance()).resolves.toMatchObject({
+      accountId: 'usr_a',
+      cases: [{ id: 'case_a' }],
+    });
+  });
+
   it('uploads multipart with the CSRF header and does not set a JSON content type', async () => {
     const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) =>
       json(201, {

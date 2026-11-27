@@ -35,6 +35,7 @@ function makeClient(overrides: Partial<CasesClient> = {}): CasesClient {
     csrf: vi.fn(async () => 'csrf-1'),
     me: vi.fn(async () => USER),
     listCases: vi.fn(async () => []),
+    listCasesWithProvenance: vi.fn(async () => ({ accountId: USER.id, cases: [] })),
     createCase: vi.fn(async () => CASE),
     updateCase: vi.fn(async () => CASE),
     deleteCase: vi.fn(async () => undefined),
@@ -47,7 +48,7 @@ function makeClient(overrides: Partial<CasesClient> = {}): CasesClient {
     deleteDocument: vi.fn(async () => undefined),
     ...overrides,
   };
-  if (client.listCasesWithProvenance === undefined) {
+  if (!Object.prototype.hasOwnProperty.call(overrides, 'listCasesWithProvenance')) {
     client.listCasesWithProvenance = async () => ({
       accountId: USER.id,
       cases: await client.listCases(),
@@ -555,6 +556,35 @@ describe('private cases page: switching and session safety', () => {
 
     await waitFor(() => expect(screen.queryByText(/Loading private cases/i)).not.toBeInTheDocument());
     expect(screen.queryByRole('button', { name: /Second case/i })).not.toBeInTheDocument();
+  });
+
+  it('fails closed when the runtime provenance capability is missing', async () => {
+    const listCases = vi.fn(async () => [CASE]);
+    const client = makeClient({ listCases });
+    client.listCasesWithProvenance = undefined as unknown as CasesClient['listCasesWithProvenance'];
+
+    render(<CasesPage client={client} />);
+
+    expect(await screen.findByText(/could not load/i)).toBeInTheDocument();
+    expect(screen.queryByText(CASE.label)).not.toBeInTheDocument();
+    expect(listCases).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when provenance is invalid and never falls back to an unverified list', async () => {
+    const listCases = vi.fn(async () => [CASE]);
+    const client = makeClient({
+      listCases,
+      listCasesWithProvenance: vi.fn(async () => ({
+        accountId: '',
+        cases: [CASE],
+      })),
+    });
+
+    render(<CasesPage client={client} />);
+
+    expect(await screen.findByRole('link', { name: /sign in/i })).toHaveAttribute('href', '/account');
+    expect(screen.queryByText(CASE.label)).not.toBeInTheDocument();
+    expect(listCases).not.toHaveBeenCalled();
   });
 
   it('never saves one case with the edit fields of another', async () => {

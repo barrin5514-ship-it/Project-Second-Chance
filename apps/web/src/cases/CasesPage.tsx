@@ -99,21 +99,13 @@ export default function CasesPage({ client = casesClient }: CasesPageProps): JSX
     active: () => boolean,
     expectedAccountId: string,
   ): Promise<void> {
-    let items: PrivateCase[];
-    let responseAccountId: string | null = null;
-    if (typeof client.listCasesWithProvenance === 'function') {
-      const snapshot = await client.listCasesWithProvenance();
-      items = snapshot.cases;
-      responseAccountId = snapshot.accountId;
-    } else {
-      items = await client.listCases();
-    }
+    const snapshot = await client.listCasesWithProvenance();
     if (!active()) return;
-    if (responseAccountId !== null && responseAccountId !== expectedAccountId) {
+    if (snapshot.accountId !== expectedAccountId) {
       endSession();
       return;
     }
-    setCases(items);
+    setCases(snapshot.cases);
   }
 
   useEffect(() => {
@@ -166,7 +158,6 @@ export default function CasesPage({ client = casesClient }: CasesPageProps): JSX
   }
 
   async function listVerifiedCases(expectedAccountId: string): Promise<PrivateCase[] | null> {
-    if (typeof client.listCasesWithProvenance !== 'function') return null;
     const snapshot = await client.listCasesWithProvenance();
     return snapshot.accountId === expectedAccountId ? snapshot.cases : null;
   }
@@ -218,15 +209,8 @@ export default function CasesPage({ client = casesClient }: CasesPageProps): JSX
     const renderCases = options.renderCases ?? true;
     const id = selectedRef.current;
     try {
-      let nextCases: PrivateCase[];
-      let responseAccountId: string | null = null;
-      if (typeof client.listCasesWithProvenance === 'function') {
-        const snapshot = await client.listCasesWithProvenance();
-        nextCases = snapshot.cases;
-        responseAccountId = snapshot.accountId;
-      } else {
-        nextCases = await client.listCases();
-      }
+      const snapshot = await client.listCasesWithProvenance();
+      const nextCases = snapshot.cases;
       if (requestId.current !== current) return;
       // Refreshed private state must belong to the identity currently shown.
       // A session change during an ambiguous operation must not render the new
@@ -237,12 +221,11 @@ export default function CasesPage({ client = casesClient }: CasesPageProps): JSX
         endSession();
         return;
       }
-      // Real responses carry authenticated account provenance. If the client
-      // cannot provide it, ambiguous mutations fail closed and retain the known
-      // case list; only the already-scoped case's documents are refreshed.
-      const canRenderCases =
-        responseAccountId !== null ? responseAccountId === authoritative.id : renderCases;
-      if (canRenderCases) setCases(nextCases);
+      if (snapshot.accountId !== authoritative.id) {
+        endSession();
+        return;
+      }
+      if (renderCases) setCases(nextCases);
       if (id !== null) {
         const nextDocuments = await client.listDocuments(id);
         if (requestId.current === current && selectedRef.current === id) {

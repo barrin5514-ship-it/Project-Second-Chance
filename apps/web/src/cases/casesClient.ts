@@ -20,10 +20,17 @@ export interface PrivateDocument {
   createdAt: number;
 }
 
+export interface PrivateCaseSnapshot {
+  accountId: string;
+  cases: PrivateCase[];
+}
+
 export interface CasesClient {
   csrf(): Promise<string>;
   me(): Promise<AccountUser | null>;
   listCases(): Promise<PrivateCase[]>;
+  /** Authenticated provenance required at every reconciliation boundary. */
+  listCasesWithProvenance(): Promise<PrivateCaseSnapshot>;
   createCase(label: string, jurisdiction: string | null, csrfToken: string): Promise<PrivateCase>;
   updateCase(
     id: string,
@@ -156,6 +163,14 @@ async function listCases(): Promise<PrivateCase[]> {
   return Array.isArray(body['cases']) ? body['cases'].map(caseFrom) : [];
 }
 
+async function listCasesWithProvenance(): Promise<PrivateCaseSnapshot> {
+  const body = await requestJson('/api/cases', { method: 'GET', headers: { Accept: 'application/json' } });
+  if (typeof body['accountId'] !== 'string' || !Array.isArray(body['cases'])) {
+    throw new CasesRequestError(200, 'invalid-response');
+  }
+  return { accountId: body['accountId'], cases: body['cases'].map(caseFrom) };
+}
+
 async function createCase(
   label: string,
   jurisdiction: string | null,
@@ -273,6 +288,7 @@ export const casesClient: CasesClient = {
   csrf: accountClient.csrf,
   me: accountClient.me,
   listCases,
+  listCasesWithProvenance,
   createCase,
   updateCase,
   deleteCase,
