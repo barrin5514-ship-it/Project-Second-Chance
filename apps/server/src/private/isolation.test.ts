@@ -58,3 +58,13 @@ it('rejects private directories outside the isolated runtime', () => {
   };
   expect(() => loadPrivatePaths(root, env)).toThrow(/must stay inside/i);
 });
+
+it.runIf(process.platform === 'win32')('rejects owner-runtime casing variants on Windows', () => {
+  const root = mkdtempSync(join(tmpdir(), 'psc-isolation-case-'));
+  roots.push(root);
+  const env = {
+    PSC_E2E_NO_KEY: '1',
+    PSC_RUNTIME_DIR: join(root, 'RUNTIME'),
+  };
+  expect(() => loadPrivatePaths(root, env)).toThrow(/must not use the owner runtime/i);
+});

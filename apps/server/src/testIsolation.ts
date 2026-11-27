@@ -7,9 +7,12 @@ export function assertE2EIsolation(root: string, env: NodeJS.ProcessEnv): void {
   if (!configured) throw new Error('E2E mode requires PSC_RUNTIME_DIR');
   const runtime = resolve(configured);
   const ownerRuntime = resolve(root, 'runtime');
-  const relativeToOwner = relative(ownerRuntime, runtime);
+  const windows = process.platform === 'win32';
+  const comparableRuntime = windows ? runtime.toLowerCase() : runtime;
+  const comparableOwner = windows ? ownerRuntime.toLowerCase() : ownerRuntime;
+  const relativeToOwner = relative(comparableOwner, comparableRuntime);
   if (
-    runtime === ownerRuntime ||
+    comparableRuntime === comparableOwner ||
     (relativeToOwner !== '' && !relativeToOwner.startsWith('..') && !isAbsolute(relativeToOwner))
   ) {
     throw new Error('E2E mode must not use the owner runtime');
@@ -18,7 +21,10 @@ export function assertE2EIsolation(root: string, env: NodeJS.ProcessEnv): void {
     const value = env[key];
     if (!value) continue;
     const resolved = resolve(value);
-    const rel = relative(runtime, resolved);
+    const rel = relative(
+      comparableRuntime,
+      windows ? resolved.toLowerCase() : resolved,
+    );
     if (rel === '' || rel.startsWith('..') || isAbsolute(rel)) {
       throw new Error(`${key} must stay inside the isolated E2E runtime`);
     }
