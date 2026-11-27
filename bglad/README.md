@@ -39,6 +39,8 @@ node bglad/orchestrator.mjs run --task bglad/task.json --builder-dsh
 - The reviewer is read-only and does not edit application code.
 - No command pushes, merges, deploys, migrates or rewrites history.
 - The coordinator records HEAD/branch/status and a SHA-256 manifest over the diff, status and sorted untracked-file content. A checkpoint is rejected on branch mismatch; unexpected source changes are visible in the next run state.
+- **Committed-checkpoint integrity:** tasks may declare `requiredFiles`, `sourceDependencies`, `testDependencies` and `requireCleanCheckpoint`. `checkpoint-integrity.mjs` rejects missing/untracked required files and overlays on required paths before Codex, after Codex, after Claude and at final PASS. Use a clean isolated clone for independent verification; unrelated uncommitted work is preserved in the source workspace but cannot contribute to the accepted checkpoint.
+- **Committed-snapshot rule:** working-tree PASS is not committed-checkpoint PASS. Create a scoped provisional local commit containing implementation and tests, then run Codex and Claude against that exact commit. Reports must name the verified hash.
 - No source manifests are committed; `.bglad/` is ignored.
 - The coordinator does not read `.env`, keys, databases, documents or owner runtime content.
 

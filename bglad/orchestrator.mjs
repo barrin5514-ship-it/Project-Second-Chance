@@ -15,6 +15,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { checkCheckpoint } from './checkpoint-integrity.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_BG = resolve(HERE, '..');
@@ -36,7 +37,8 @@ const CODEX_BIN = process.env.CODEX_BIN || 'codex';
 const CLAUDE_BIN = process.env.CLAUDE_BIN || 'claude';
 
 function usage() {
-  console.log(`BGLAD coordinator\n\nUsage:\n  node bglad/orchestrator.mjs run --task <task.json> [--builder-external|--builder-dsh]\n  node bglad/orchestrator.mjs status --task-id <id>\n  node bglad/orchestrator.mjs preflight\n\nTask fields: id, project, assignment, acceptance, branch, baseCommit,\nverifyCommands, testRoot, reviewerPrompt, builderPrompt.`);
+  console.log(`BGLAD coordinator\n\nUsage:\n  node bglad/orchestrator.mjs run --task <task.json> [--builder-external|--builder-dsh]\n  node bglad/orchestrator.mjs status --task-id <id>\n  node bglad/orchestrator.mjs preflight\n\nTask fields: id, project, assignment, acceptance, branch, baseCommit,\nverifyCommands, testRoot, reviewerPrompt, builderPrompt, requiredFiles,
+sourceDependencies, testDependencies, requireCleanCheckpoint, codexSandbox.`);
 }
 
 function timestamp() {
@@ -336,6 +338,16 @@ async function runTask(taskPath, builderMode) {
       return state;
     }
 
+    const checkpoint = checkCheckpoint(project, task);
+    state.checkpointCheck = checkpoint;
+    save();
+    if (!checkpoint.ok) {
+      state.status = 'BLOCKED';
+      state.blocker = `committed-checkpoint integrity failed: ${checkpoint.errors.join('; ')}`;
+      save();
+      return state;
+    }
+
     if (builderMode === 'dsh') {
       state.phase = 'builder';
       save();
@@ -383,14 +395,17 @@ async function runTask(taskPath, builderMode) {
         continue;
       }
       const afterTester = manifest(project);
+      const afterTesterCheck = checkCheckpoint(project, task);
       if (
+        !afterTesterCheck.ok ||
         afterTester.head !== checkpoint.head ||
         afterTester.branch !== checkpoint.branch ||
         afterTester.diffHash !== checkpoint.diffHash
       ) {
         state.status = 'BLOCKED';
-        state.blocker = 'source checkpoint changed during independent Codex testing';
+        state.blocker = 'source checkpoint changed or required overlay appeared during independent Codex testing';
         state.source = afterTester;
+        state.checkpointCheck = afterTesterCheck;
         save();
         return state;
       }
@@ -422,14 +437,17 @@ async function runTask(taskPath, builderMode) {
         continue;
       }
       const afterReviewer = manifest(project);
+      const afterReviewerCheck = checkCheckpoint(project, task);
       if (
+        !afterReviewerCheck.ok ||
         afterReviewer.head !== checkpoint.head ||
         afterReviewer.branch !== checkpoint.branch ||
         afterReviewer.diffHash !== checkpoint.diffHash
       ) {
         state.status = 'BLOCKED';
-        state.blocker = 'source checkpoint changed during independent Claude review';
+        state.blocker = 'source checkpoint changed or required overlay appeared during independent Claude review';
         state.source = afterReviewer;
+        state.checkpointCheck = afterReviewerCheck;
         save();
         return state;
       }
@@ -438,6 +456,7 @@ async function runTask(taskPath, builderMode) {
       state.phase = 'complete';
       state.completedAt = timestamp();
       state.finalCheckpoint = manifest(project);
+      state.finalCheckpointCheck = checkCheckpoint(project, task);
       save();
       return state;
     }

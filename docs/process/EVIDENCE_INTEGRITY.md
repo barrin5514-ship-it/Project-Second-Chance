@@ -14,6 +14,11 @@ Adopted November 27, 2026 for Project Second Chance. Applies to all builder, tes
 8. **Sensitive data boundary.** Never place owner-specific absolute paths, credentials, `.env` values, keys, private database contents, document contents or runtime records in evidence. Use redacted placeholders and metadata-only statements.
 9. **Task tracker honesty.** Task PASS means only the scoped verified behavior. Outstanding verification, approval, publication, recovery and optional-hardening gates remain explicit; no automatic waiver.
 10. **Preserve provenance.** Every restoration/correction records the Git commit or preserved report used, the date, the original value and the corrected value.
+11. **Committed checkpoint equals verified snapshot.** Working-tree results are not committed-checkpoint acceptance. Required implementation and tests must be committed together; a provisional local commit precedes independent verification.
+12. **Explicit dependency inventory.** Every task declares required implementation and test files/dependencies. Missing, untracked or overlaid required files invalidate the checkpoint.
+13. **Clean independent verification.** Codex verifies the exact commit in a clean isolated workspace; no uncommitted overlay may contribute. Claude reviews the same commit and evidence.
+14. **Traceable corrections.** Each correction is an additional commit. Reports name the exact verified commit hash; a task is PASS only after that final committed snapshot passes all required checks.
+15. **Preserve unrelated work.** Scoped staging must not omit required dependencies or absorb unrelated uncommitted changes. Unrelated work remains preserved.
 
 ## Minimum evidence record
 
