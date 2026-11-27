@@ -43,8 +43,8 @@ it('rejects the owner runtime even when explicitly configured', () => {
   const root = mkdtempSync(join(tmpdir(), 'psc-isolation-owner-'));
   roots.push(root);
   const env = { PSC_E2E_NO_KEY: '1', PSC_RUNTIME_DIR: join(root, 'runtime') };
-  expect(() => loadAuthSettings(root, env)).toThrow(/must not use the owner runtime/i);
-  expect(() => loadPrivatePaths(root, env)).toThrow(/must not use the owner runtime/i);
+  expect(() => loadAuthSettings(root, env)).toThrow(/owner runtime/i);
+  expect(() => loadPrivatePaths(root, env)).toThrow(/owner runtime/i);
 });
 
 it('rejects private directories outside the isolated runtime', () => {
@@ -66,7 +66,7 @@ it.runIf(process.platform === 'win32')('rejects owner-runtime casing variants on
     PSC_E2E_NO_KEY: '1',
     PSC_RUNTIME_DIR: join(root, 'RUNTIME'),
   };
-  expect(() => loadPrivatePaths(root, env)).toThrow(/must not use the owner runtime/i);
+  expect(() => loadPrivatePaths(root, env)).toThrow(/owner runtime/i);
 });
 
 it('rejects owner-runtime descendants whose names begin with two dots', () => {
@@ -76,7 +76,7 @@ it('rejects owner-runtime descendants whose names begin with two dots', () => {
     PSC_E2E_NO_KEY: '1',
     PSC_RUNTIME_DIR: join(root, 'runtime', '..fictional'),
   };
-  expect(() => loadPrivatePaths(root, env)).toThrow(/must not use the owner runtime/i);
+  expect(() => loadPrivatePaths(root, env)).toThrow(/owner runtime/i);
 });
 
 it('rejects empty private-directory overrides', () => {
@@ -97,4 +97,22 @@ it('rejects empty private-directory overrides', () => {
       PSC_PRIVATE_KEY_DIR: '',
     }),
   ).toThrow(/must not be empty/i);
+});
+
+it('rejects a runtime that contains the owner runtime', () => {
+  const root = mkdtempSync(join(tmpdir(), 'psc-isolation-parent-'));
+  roots.push(root);
+  expect(() =>
+    loadPrivatePaths(root, {
+      PSC_E2E_NO_KEY: '1',
+      PSC_RUNTIME_DIR: root,
+    }),
+  ).toThrow(/owner runtime/i);
+  expect(() =>
+    loadPrivatePaths(root, {
+      PSC_E2E_NO_KEY: '1',
+      PSC_RUNTIME_DIR: root,
+      PSC_PRIVATE_KEY_DIR: join(root, 'runtime', 'keys'),
+    }),
+  ).toThrow(/owner runtime/i);
 });

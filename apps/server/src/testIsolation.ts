@@ -15,8 +15,12 @@ export function assertE2EIsolation(root: string, env: NodeJS.ProcessEnv): void {
   const windows = process.platform === 'win32';
   const comparableRuntime = windows ? runtime.toLowerCase() : runtime;
   const comparableOwner = windows ? ownerRuntime.toLowerCase() : ownerRuntime;
-  if (comparableRuntime === comparableOwner || !escapes(comparableOwner, comparableRuntime)) {
-    throw new Error('E2E mode must not use the owner runtime');
+  if (
+    comparableRuntime === comparableOwner ||
+    !escapes(comparableOwner, comparableRuntime) ||
+    !escapes(comparableRuntime, comparableOwner)
+  ) {
+    throw new Error('E2E mode must not use or contain the owner runtime');
   }
   for (const key of ['PSC_PRIVATE_DATA_DIR', 'PSC_PRIVATE_KEY_DIR']) {
     const value = env[key];
@@ -25,6 +29,9 @@ export function assertE2EIsolation(root: string, env: NodeJS.ProcessEnv): void {
     const resolved = windows ? resolve(value).toLowerCase() : resolve(value);
     if (resolved === comparableRuntime || escapes(comparableRuntime, resolved)) {
       throw new Error(`${key} must stay inside the isolated E2E runtime`);
+    }
+    if (!escapes(comparableOwner, resolved)) {
+      throw new Error(`${key} must not use the owner runtime`);
     }
   }
 }
