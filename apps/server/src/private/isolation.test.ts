@@ -68,3 +68,33 @@ it.runIf(process.platform === 'win32')('rejects owner-runtime casing variants on
   };
   expect(() => loadPrivatePaths(root, env)).toThrow(/must not use the owner runtime/i);
 });
+
+it('rejects owner-runtime descendants whose names begin with two dots', () => {
+  const root = mkdtempSync(join(tmpdir(), 'psc-isolation-dotchild-'));
+  roots.push(root);
+  const env = {
+    PSC_E2E_NO_KEY: '1',
+    PSC_RUNTIME_DIR: join(root, 'runtime', '..fictional'),
+  };
+  expect(() => loadPrivatePaths(root, env)).toThrow(/must not use the owner runtime/i);
+});
+
+it('rejects empty private-directory overrides', () => {
+  const root = mkdtempSync(join(tmpdir(), 'psc-isolation-empty-'));
+  roots.push(root);
+  const runtime = join(root, 'test-results', 'e2e-runtime-empty');
+  expect(() =>
+    loadPrivatePaths(root, {
+      PSC_E2E_NO_KEY: '1',
+      PSC_RUNTIME_DIR: runtime,
+      PSC_PRIVATE_DATA_DIR: '',
+    }),
+  ).toThrow(/must not be empty/i);
+  expect(() =>
+    loadPrivatePaths(root, {
+      PSC_E2E_NO_KEY: '1',
+      PSC_RUNTIME_DIR: runtime,
+      PSC_PRIVATE_KEY_DIR: '',
+    }),
+  ).toThrow(/must not be empty/i);
+});
