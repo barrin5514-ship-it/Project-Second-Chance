@@ -8,7 +8,7 @@ Updated method: official stable BMAD v6.12 pinned to package 6.12.4, mandatory t
 
 ## In VS Code
 
-1. Open this exact folder: `<owner-home>\Documents\ChatGPT\Next Chapter Project\ProjectSecondChance`.
+1. Open this exact folder: `<repo>`.
 2. In Continue, select DeepSeek and Agent mode.
 3. Paste the prompt below. The files it needs are already in this folder.
 

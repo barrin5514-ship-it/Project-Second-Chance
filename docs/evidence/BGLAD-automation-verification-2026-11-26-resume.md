@@ -1,6 +1,6 @@
 # BGLAD automation verification — resumed November 26, 2026
 
-Project: `<owner-home>\Documents\ChatGPT\Next Chapter Project\ProjectSecondChance`. Branch `feature/e1-s2-private-documents`; base HEAD `03b1bb8`; Task 01 checkpoint `f1b18e0`. This report supplements, and does not overwrite, `docs/evidence/BGLAD-automation-setup-2026-11-26.md`. No push, merge, deployment, migration, E1-S3 work or owner-runtime read occurred. No simulated agent result is reported as a pass.
+Project: `<repo>`. Branch `feature/e1-s2-private-documents`; base HEAD `03b1bb8`; Task 01 checkpoint `f1b18e0`. This report supplements, and does not overwrite, `docs/evidence/BGLAD-automation-setup-2026-11-26.md`. No push, merge, deployment, migration, E1-S3 work or owner-runtime read occurred. No simulated agent result is reported as a pass.
 
 ## 1. Authentication and executable discovery
 

@@ -5,7 +5,7 @@ Builder: DeepSeek. Status: **RETEST FIXES COMPLETE — STOPPED FOR CODEX RETESTI
 ## Identity and scope
 
 - Story: `docs/stories/E0-S1-foundation.md` (AC1–AC10). BMAD spec created from that approved story: `_bmad-output/implementation-artifacts/spec-e0-s1-foundation.md`.
-- Date: 2026-11-23. Absolute workspace: `<owner-home>\Documents\ChatGPT\Next Chapter Project\ProjectSecondChance`.
+- Date: 2026-11-23. Absolute workspace: `<repo>`.
 - Branch: `feature/e0-s1-foundation`, created from the **unmerged** Mira branch commit `68a3c1f`; owner/Codex/Claude/live evidence was preserved first in `bd055ad`. No merge or push. Baseline recorded in the spec: `bd055ad3e917f0ab91a9c0d8cdb93743266b5925`.
 - BMAD: stable **6.12.4** (`_bmad/_config/manifest.yaml`, install date 2026-11-20, modules core + bmm). The installed `bmad-build` skill rendered through `uv run --no-cache _bmad/scripts/render_skill.py ...` to `_bmad/render/bmad-build/.../workflow.md`; no reinstall was performed. Continue is not required for this build.
 - Runtime/dependencies: Node **v26.13.0**, npm **11.20.0**; React 18.3.1, Vite 6.0.3, TypeScript 5.7.2, Express **4.22.3** (patched from 4.21.2 — see dependency finding), Vitest 2.1.8, Playwright 1.49.1 with Chromium 131.0.6778.33 / build 1148. `package-lock.json` updated for the Express patch.

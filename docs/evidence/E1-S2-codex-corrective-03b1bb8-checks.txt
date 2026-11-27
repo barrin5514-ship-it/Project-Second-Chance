@@ -1,0 +1,470 @@
+E1-S2 corrective independent verification — selected actual output, application commit 03b1bb8, November 25, 2026.
+Trailing whitespace normalized for source control; full raw logs remain in the disposable checkout. Counts are separate, not cumulative.
+
+LOG: maintained.log
+ ✓ apps/web/src/avatar/tokenAdapter.test.ts (2 tests) 39ms
+ ✓ apps/web/src/api/health.test.ts (6 tests) 25ms
+(node:29876) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/web/src/avatar/sdkContract.integration.test.ts (3 tests) 10ms
+ ✓ apps/web/src/cases/casesClient.test.ts (4 tests) 23ms
+ ✓ apps/web/src/entryPath.test.tsx (2 tests) 167ms
+
+ Test Files  32 passed (32)
+      Tests  347 passed (347)
+   Start at  13:05:28
+   Duration  30.62s (transform 2.76s, setup 25.63s, collect 23.91s, tests 60.74s, environment 47.02s, prepare 15.72s)
+
+
+LOG: api.log
+   ✓ private cases and documents API > rejects expired sessions before private data access 379ms
+   ✓ private cases and documents API > rejects disabled-account private access after a previously valid session 318ms
+   ✓ private cases and documents API > does not claim deletion success when managed blob removal fails 1408ms
+   ✓ private cases and documents API > rechecks authorization at the private publication boundary 766ms
+   ✓ private cases and documents API > fails closed on a wrong key and preserves readable data with the right key after restart 701ms
+   ✓ private cases and documents API > does not publish a successful upload when staging/write fails 704ms
+   ✓ private cases and documents API > keeps only ciphertext and encrypted metadata on disk and in the DB 692ms
+
+ Test Files  18 passed (18)
+      Tests  213 passed (213)
+   Start at  13:06:01
+   Duration  15.18s (transform 1.57s, setup 15.68s, collect 13.33s, tests 34.98s, environment 8ms, prepare 8.67s)
+
+
+LOG: e2e.log
+  ok 46 [chromium-narrow] › avatar.spec.ts:137:3 › failure state is honest, not a fake success › offers a retry after the failure and stays keyboard operable (1.1s)
+  ok 47 [chromium-narrow] › avatar.spec.ts:151:3 › narrow viewport › controls remain visible and operable on a phone-sized screen (658ms)
+  ok 48 [chromium-narrow] › foundation.spec.ts:12:3 › foundation landing › states the fictional boundary and links demo accounts without a landing form (625ms)
+  ok 49 [chromium-narrow] › foundation.spec.ts:33:3 › foundation landing › reports the health contract and makes only foundation API requests (726ms)
+  ok 50 [chromium-narrow] › foundation.spec.ts:55:3 › foundation landing › shows an actionable keyboard retry after API failure and recovers (1.2s)
+  ok 51 [chromium-narrow] › foundation.spec.ts:87:3 › foundation landing › treats a malformed health body as unavailable (590ms)
+  ok 52 [chromium-narrow] › foundation.spec.ts:100:3 › foundation landing › is readable and operable on a phone viewport without horizontal scrolling (583ms)
+  ok 53 [chromium-narrow] › foundation.spec.ts:112:3 › foundation landing › keeps Mira as an explicit optional page (883ms)
+  ok 54 [chromium-narrow] › private-documents.spec.ts:44:3 › private cases and encrypted documents › creates a case, uploads/downloads a PDF, and performs confirmed live deletion (3.5s)
+  ok 55 [chromium-narrow] › private-documents.spec.ts:87:3 › private cases and encrypted documents › keeps two accounts and their private cases isolated (3.2s)
+  ok 56 [chromium-narrow] › private-documents.spec.ts:114:3 › private cases and encrypted documents › keeps the private case forms operable on a narrow viewport without horizontal scrolling (1.6s)
+
+  56 passed (1.3m)
+
+LOG: auth-navigation-recheck.log
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 2 tests using 1 worker
+
+(node:11032) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:11032) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(node:11032) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ok 1 [chromium] › auth.spec.ts:75:3 › fictional-demo accounts › keeps two independent browser contexts isolated (2.7s)
+  ok 2 [chromium] › auth.spec.ts:99:3 › fictional-demo accounts › rejects a logged-out session cookie replay (1.9s)
+
+  2 passed (13.3s)
+
+LOG: typecheck-final28.log
+
+> project-second-chance@0.0.0 typecheck
+> tsc --noEmit -p tsconfig.json
+
+
+LOG: build.log
+computing gzip size...
+../../dist/web/index.html                   0.66 kB │ gzip:   0.40 kB
+../../dist/web/assets/index-BFKA00az.css    6.83 kB │ gzip:   1.57 kB
+../../dist/web/assets/sdk-C45RHlCG.js       0.76 kB │ gzip:   0.45 kB
+../../dist/web/assets/App-BAQoR2RW.js       9.92 kB │ gzip:   3.91 kB
+../../dist/web/assets/index-K2AGKDBG.js   174.25 kB │ gzip:  54.47 kB
+../../dist/web/assets/js-sdk-DglVioxy.js  664.09 kB │ gzip: 176.74 kB
+
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+✓ built in 5.36s
+
+LOG: secret-tests-retry.log
+  ✔ does not flag synthetic test credentials, placeholders or names (96.7076ms)
+  ✔ reports a line number but never the matched value (101.0964ms)
+  ✔ scopes to tracked files when a Git repository is present (438.5189ms)
+  ✔ never reads the real .env to compare values (0.9182ms)
+✔ findLeaks (961.6293ms)
+ℹ tests 7
+ℹ suites 1
+ℹ pass 7
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1133.7414
+
+LOG: audit.log
+found 0 vulnerabilities
+
+LOG: dependencies.log
+├── jsdom@25.0.1
+├── multer@2.5.0
+├── passport-local@1.0.0
+├── passport@0.7.0
+├── pdf-lib@1.17.1
+├── react-dom@18.3.1
+├── react@18.3.1
+├── supertest@7.1.4
+├── tsx@4.19.2
+├── typescript@5.7.2
+├── vite@6.0.3
+└── vitest@2.1.8
+
+
+LOG: probe-private.log
+
+ RUN  v2.1.8 <owner-path>
+
+ ✓ .setup/codex-private-independent.test.ts (6 tests) 1174ms
+   ✓ denies publication when a pending upload session has been logged out 316ms
+   ✓ two accounts cannot read or delete each others resources; owned download authenticates ciphertext 447ms
+
+ Test Files  1 passed (1)
+      Tests  6 passed (6)
+   Start at  13:15:58
+   Duration  3.42s (transform 278ms, setup 0ms, collect 1.42s, tests 1.17s, environment 0ms, prepare 284ms)
+
+
+LOG: probe-auth.log
+    at file:///<owner-path>
+  code: 'ERR_ERL_UNEXPECTED_X_FORWARDED_FOR',
+  help: 'https://express-rate-limit.github.io/ERR_ERL_UNEXPECTED_X_FORWARDED_FOR/'
+}
+
+ ✓ .setup/codex-auth-independent.test.tsx (8 tests) 1464ms
+   ✓ spoofed forwarded addresses cannot evade the production per-source login limit 743ms
+
+ Test Files  1 passed (1)
+      Tests  8 passed (8)
+   Start at  13:16:05
+   Duration  5.54s (transform 244ms, setup 293ms, collect 1.84s, tests 1.46s, environment 1.22s, prepare 263ms)
+
+
+LOG: probe-foundation.log
+
+ RUN  v2.1.8 <owner-path>
+
+ ✓ .setup/codex-foundation-independent.test.tsx (6 tests) 181ms
+
+ Test Files  1 passed (1)
+      Tests  6 passed (6)
+   Start at  13:16:13
+   Duration  3.68s (transform 130ms, setup 286ms, collect 1.38s, tests 181ms, environment 1.15s, prepare 224ms)
+
+
+LOG: probe-sdk-contract.log
+
+ RUN  v2.1.8 <owner-path>
+
+(node:29960) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ .setup/codex-mira-sdk-contract.test.ts (3 tests) 7ms
+
+ Test Files  1 passed (1)
+      Tests  3 passed (3)
+   Start at  13:16:19
+   Duration  2.03s (transform 66ms, setup 0ms, collect 155ms, tests 7ms, environment 1.16s, prepare 214ms)
+
+
+LOG: probe-review.log
+
+ RUN  v2.1.8 <owner-path>
+
+ ✓ .setup/codex-mira-independent.test.tsx (2 tests) 320ms
+
+ Test Files  1 passed (1)
+      Tests  2 passed (2)
+   Start at  13:16:23
+   Duration  3.90s (transform 179ms, setup 327ms, collect 1.34s, tests 320ms, environment 1.20s, prepare 224ms)
+
+
+LOG: cookie-race.log
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 1 test using 1 worker
+
+(node:29820) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:29820) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(node:29820) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+{"initialResponses":1,"tokenFromResponse":1,"cookieFromResponse":1,"status":201}
+  ok 1 [chromium] › codex-auth-cookie-race.spec.ts:3:1 › startup remains usable when an older CSRF response delivers its cookie last (1.4s)
+
+  1 passed (9.1s)
+
+LOG: download-control.log
+CONTROL_DOWNLOAD_ERROR EPERM
+
+LOG: e2e-attested.log
+    [31mTest timeout of 60000ms exceeded.[39m
+
+    Error: page.goto: net::ERR_NETWORK_IO_SUSPENDED at http://127.0.0.1:5173/account
+    Call log:
+    [2m  - navigating to "http://127.0.0.1:5173/account", waiting until "load"[22m
+
+
+       9 |
+      10 | async function createAccount(page: Page, email: string, password = PASSWORD): Promise<void> {
+    > 11 |   await page.goto('/account');
+         |              ^
+      12 |   await page.locator('#create-email').fill(email);
+      13 |   await page.locator('#create-password').fill(password);
+      14 |   await page.getByRole('button', { name: /create account/i }).click();
+        at createAccount (<repo>\.setup\codex-corrective-03b1bb8\ProjectSecondChance\tests\e2e\auth.spec.ts:11:14)
+        at openTwoAccounts (<repo>\.setup\codex-corrective-03b1bb8\ProjectSecondChance\tests\e2e\auth.spec.ts:42:9)
+        at <repo>\.setup\codex-corrective-03b1bb8\ProjectSecondChance\tests\e2e\auth.spec.ts:76:28
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\auth-fictional-demo-accoun-bd8da-t-browser-contexts-isolated-chromium\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\auth-fictional-demo-accoun-bd8da-t-browser-contexts-isolated-chromium\test-failed-2.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\auth-fictional-demo-accoun-bd8da-t-browser-contexts-isolated-chromium\trace.zip
+    Usage:
+
+        npx playwright show-trace test-results\auth-fictional-demo-accoun-bd8da-t-browser-contexts-isolated-chromium\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  2) [chromium] › auth.spec.ts:99:3 › fictional-demo accounts › rejects a logged-out session cookie replay
+
+    [31mTest timeout of 60000ms exceeded.[39m
+
+    Error: page.goto: Test timeout of 60000ms exceeded.
+    Call log:
+    [2m  - navigating to "http://127.0.0.1:5173/account", waiting until "load"[22m
+
+
+       9 |
+      10 | async function createAccount(page: Page, email: string, password = PASSWORD): Promise<void> {
+    > 11 |   await page.goto('/account');
+         |              ^
+      12 |   await page.locator('#create-email').fill(email);
+      13 |   await page.locator('#create-password').fill(password);
+      14 |   await page.getByRole('button', { name: /create account/i }).click();
+        at createAccount (<repo>\.setup\codex-corrective-03b1bb8\ProjectSecondChance\tests\e2e\auth.spec.ts:11:14)
+        at <repo>\.setup\codex-corrective-03b1bb8\ProjectSecondChance\tests\e2e\auth.spec.ts:101:11
+
+    attachment #1: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\auth-fictional-demo-accoun-66026-d-out-session-cookie-replay-chromium\trace.zip
+    Usage:
+
+        npx playwright show-trace test-results\auth-fictional-demo-accoun-66026-d-out-session-cookie-replay-chromium\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  2 failed
+    [chromium] › auth.spec.ts:75:3 › fictional-demo accounts › keeps two independent browser contexts isolated
+    [chromium] › auth.spec.ts:99:3 › fictional-demo accounts › rejects a logged-out session cookie replay
+  54 passed (7.7m)
+
+LOG: original-independent-attested.log
+
+ RUN  v2.1.8 <owner-path>
+
+ ❯ tests/independent/e1-s2-codex.test.ts (11 tests | 2 failed) 3922ms
+   ✓ P1/P2: denies every foreign-resource operation and parent substitution without exposing the label 681ms
+   ✓ P9: failure releases both upload slots and does not consume another account quota 492ms
+   × P9: disconnect releases a slot and the abandoned upload never publishes 328ms
+     → expected 429 to be 201 // Object.is equality
+   ✓ P6: a genuinely locked SQLite store fails without a published document 501ms
+   ✓ P6/P8: abrupt process exit after rename is reconciled without plaintext or a ready record 512ms
+   × R13 known limitation: a truncated incremental update after an earlier EOF is accepted 342ms
+     → promise rejected "UploadValidationError: invalid-upload { code: '…' }" instead of resolving
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/independent/e1-s2-codex.test.ts > P9: disconnect releases a slot and the abandoned upload never publishes
+AssertionError: expected 429 to be 201 // Object.is equality
+
+- Expected
++ Received
+
+- 201
++ 429
+
+ ❯ tests/independent/e1-s2-codex.test.ts:118:40
+    116|     await gate.entered; firstRequest.abort(); await one;
+    117|     await vi.waitFor(() => expect(h.uploadCloses).toBe(1));
+    118|     expect((await a.upload(c)).status).toBe(201);
+       |                                        ^
+    119|   } finally { gate.release(); }
+    120|   expect((await two).status).toBe(201);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  tests/independent/e1-s2-codex.test.ts > R13 known limitation: a truncated incremental update after an earlier EOF is accepted
+AssertionError: promise rejected "UploadValidationError: invalid-upload { code: '…' }" instead of resolving
+ ❯ tests/independent/e1-s2-codex.test.ts:220:117
+    218|   expect(truncated.subarray(-1024).includes('%%EOF')).toBe(true);
+    219|   expect(truncated.lastIndexOf('%%EOF')).toBe(base.lastIndexOf('%%EOF'…
+    220|   await expect(validation.validateUpload({ buffer: truncated, original…
+       |                                                                                                                     ^
+    221| });
+    222|
+
+Caused by: UploadValidationError: invalid-upload
+ ❯ Module.validateUpload apps/server/src/private/uploadValidation.ts:149:15
+ ❯ tests/independent/e1-s2-codex.test.ts:220:3
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+Serialized Error: { code: 'invalid' }
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 9 passed (11)
+   Start at  13:33:48
+   Duration  6.17s (transform 341ms, setup 0ms, collect 1.52s, tests 3.92s, environment 0ms, prepare 239ms)
+
+
+LOG: browser-artifact.log
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[WebServer] (node:24736) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] [api] No usable NUANCE_API_KEY. Start will answer 503.
+[WebServer] (node:27444) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+[WebServer] (Use `node --trace-deprecation ...` to show where the warning was created)
+[WebServer] (node:27444) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (node:28668) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 2 tests using 1 worker
+
+(node:36504) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:36504) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(node:36504) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  x  1 [chromium] › e1-s2-download.spec.ts:4:1 › P5/P10: actual browser UTF-8 download artifact is byte-identical (12.9s)
+(node:31776) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:31776) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(node:31776) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  x  2 [chromium-narrow] › e1-s2-download.spec.ts:4:1 › P5/P10: actual browser UTF-8 download artifact is byte-identical (2.5s)
+
+
+  1) [chromium] › e1-s2-download.spec.ts:4:1 › P5/P10: actual browser UTF-8 download artifact is byte-identical
+
+    Error: EPERM: operation not permitted, open '<owner-home>\Documents\ChatGPT\Next Chapter Project\.codex-temp-e1s2-03b1bb8\playwright-artifacts-eMiWd4\3f28c107-6b73-437e-a7d6-dfa91826a0a8'
+
+      31 |   expect(output).not.toBeNull();
+      32 |   expect(await download.failure()).toBeNull();
+    > 33 |   expect(readFileSync(output!).equals(bytes)).toBe(true);
+         |          ^
+      34 | });
+      35 |
+        at <repo>\.setup\codex-corrective-03b1bb8\ProjectSecondChance\tests\independent\e1-s2-download.spec.ts:33:10
+
+    [31mTest timeout of 60000ms exceeded.[39m
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\codex-independent-download\e1-s2-download-P5-P10-actu-dfeb9--artifact-is-byte-identical-chromium\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  2) [chromium-narrow] › e1-s2-download.spec.ts:4:1 › P5/P10: actual browser UTF-8 download artifact is byte-identical
+
+    Error: EPERM: operation not permitted, open '<owner-home>\Documents\ChatGPT\Next Chapter Project\.codex-temp-e1s2-03b1bb8\playwright-artifacts-ufD2At\9b49156b-f80f-4aad-8e6f-7c373ddac366'
+
+      31 |   expect(output).not.toBeNull();
+      32 |   expect(await download.failure()).toBeNull();
+    > 33 |   expect(readFileSync(output!).equals(bytes)).toBe(true);
+         |          ^
+      34 | });
+      35 |
+        at <repo>\.setup\codex-corrective-03b1bb8\ProjectSecondChance\tests\independent\e1-s2-download.spec.ts:33:10
+
+    [31mTest timeout of 60000ms exceeded.[39m
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\codex-independent-download\e1-s2-download-P5-P10-actu-dfeb9--artifact-is-byte-identical-chromium-narrow\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  2 failed
+    [chromium] › e1-s2-download.spec.ts:4:1 › P5/P10: actual browser UTF-8 download artifact is byte-identical
+    [chromium-narrow] › e1-s2-download.spec.ts:4:1 › P5/P10: actual browser UTF-8 download artifact is byte-identical
+
+LOG: corrective-final28.log (metrics and first failure headings)
+
+ RUN  v2.1.8 <owner-path>
+
+stdout | tests/independent/e1-s2-corrective-worker.test.ts > FIX A: real PDF parsing uses configured worker heap limits, default deadline and leaves the event loop available
+{"validPdfMilliseconds":806,"workerOldHeapMiB":64,"deadlineMs":3000,"mainCallbackRanBeforeValidation":true}
+
+stdout | tests/independent/e1-s2-corrective-worker.test.ts > FIX A: repeated conservative deadline failures and invalid input terminate their real workers
+{"controlledFailures":3,"remainingObservedWorkers":0}
+
+stdout | tests/independent/e1-s2-corrective-api.test.ts > FIX C regression: retry must not report deletion success when stat is unavailable but ciphertext still exists
+{"deletionRetryStatus":204,"ciphertextStillExists":true,"documentRows":0}
+
+stdout | tests/independent/e1-s2-corrective-ui.test.tsx > FIX D regression: ambiguous response after account change must recheck identity before showing another account cases
+{"identityChecks":1,"newAccountCaseShown":true,"oldIdentityStillShown":true}
+
+stdout | tests/independent/e1-s2-corrective-worker.test.ts > FIX A: default three-second deadline controls an idle worker without a resource-heavy PDF
+{"idleWorkerDefaultTimeoutMilliseconds":3013,"remainingObservedWorkers":0}
+
+stdout | tests/independent/e1-s2-corrective-worker.test.ts > FIX A/E lifecycle regression: validation must not settle until worker termination has actually completed
+{"validationSettledBeforeWorkerExit":true,"workerThreadStillRegistered":true}
+
+ ❯ tests/independent/e1-s2-corrective-worker.test.ts (5 tests | 1 failed) 5108ms
+   ✓ FIX A: real PDF parsing uses configured worker heap limits, default deadline and leaves the event loop available 854ms
+   ✓ FIX A: repeated conservative deadline failures and invalid input terminate their real workers 802ms
+   ✓ FIX A: default three-second deadline controls an idle worker without a resource-heavy PDF 3100ms
+   × FIX A/E lifecycle regression: validation must not settle until worker termination has actually completed 185ms
+     → route finally releases the slot when this promise settles, before the worker exit event: expected true to be false // Object.is equality
+stdout | tests/independent/e1-s2-corrective-api.test.ts > FIX F regression: an unexpected validation failure after logout must suppress stale cookies too
+{"unexpectedValidationStatus":400,"staleCookiePresent":true,"publishedRows":0}
+
+ ❯ tests/independent/e1-s2-corrective-ui.test.tsx (5 tests | 2 failed) 2383ms
+   ✓ FIX D: ambiguous status 0 refreshes documents, warns honestly and never auto-replays 431ms
+   × FIX D regression: ambiguous response after account change must recheck identity before showing another account cases 206ms
+     → ambiguous reconciliation must verify the current session identity: expected "spy" to be called 2 times, but got 1 times
+   × FIX D regression: rejected upload message must not appear under a newly selected case 1299ms
+     → expect(element).not.toBeInTheDocument()
+
+expected document not to contain element, found <p
+  aria-live="polite"
+  class="cases-message cases-message--error"
+  role="alert"
+>
+LOG: corrective-final28.log (summary)
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/7]⎯
+
+ Test Files  4 failed | 2 passed (6)
+      Tests  7 failed | 21 passed (28)
+   Start at  13:24:45
+   Duration  10.17s (transform 1.11s, setup 5.72s, collect 5.50s, tests 33.63s, environment 2.23s, prepare 2.01s)
+
+
+Persistent command exit records:
+auth-navigation-recheck.exit: 0
+browser-artifact.exit: 1
+cookie-race.exit: 0
+corrective-delivery.exit: 1
+corrective-expanded.exit: 1
+corrective-final.exit: 1
+corrective-final28.exit: 1
+corrective-verified.exit: 1
+dependencies.exit: 0
+download-control.exit: 1
+e2e-attested.exit: 1
+original-independent-attested.exit: 1
+probe-auth.exit: 0
+probe-foundation.exit: 0
+probe-private.exit: 0
+probe-review.exit: 0
+probe-sdk-contract.exit: 0
+typecheck-delivery.exit: 0
+typecheck-expanded.exit: 2
+typecheck-final.exit: 0
+typecheck-final28.exit: 0
+typecheck-verified.exit: 0

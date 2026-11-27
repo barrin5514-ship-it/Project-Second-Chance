@@ -5,7 +5,7 @@ Builder: DeepSeek. Status: **BOUNDED CORRECTIONS APPLIED — STOPPED FOR FRESH C
 ## Identity and scope
 
 - Story: `docs/stories/E0-S2-source-readiness.md`. Delivery sequence: `docs/planning/RISK_DRIVEN_DELIVERY.md` slice 2.
-- Original research date: 2026-11-23. Correction date: **2026-11-24** (America/New_York). Workspace: `<owner-home>\Documents\ChatGPT\Next Chapter Project\ProjectSecondChance`.
+- Original research date: 2026-11-23. Correction date: **2026-11-24** (America/New_York). Workspace: `<repo>`.
 - Branch: `feature/e0-s2-source-readiness`, based on local `main` merge `04a0fb8dcad1d539aaf44e56d28fe63d6e9d8dec`. No application, dependency, database, migration or generated implementation-spec change.
 - BMAD: stable **6.12.4** verified in `_bmad/_config/manifest.yaml`; the installed `bmad-deep-recon` skill was rendered/activated through the project tooling. No install or version change.
 - Workflow: **Deep Recon `run` intent**, type **`domain`**, `standard` preset, `validation: normal`, inline sequential (no subagent fan-out), breadth-first dimensions, max 8 sources/round and depth 2 as configured. The DSH runtime is autonomous with an explicit owner-approved research scope, so the plan was recorded as a decision/assumption and research proceeded rather than inventing an interactive approval.

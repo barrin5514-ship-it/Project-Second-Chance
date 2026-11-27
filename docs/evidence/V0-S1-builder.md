@@ -5,7 +5,7 @@ Builder: DeepSeek. Status: **CLAUDE-TRIAGE FIXES COMPLETE — STOPPED FOR CODEX 
 ## Identity and scope
 
 - Story: `docs/stories/V0-S1-mira-connection-spike.md` (AC1–AC8). Approved spec: `_bmad-output/implementation-artifacts/spec-v0-s1-mira-connection-spike.md`.
-- Date of this checkpoint: 2026-11-23 (America/New_York). Absolute workspace: `<owner-home>\Documents\ChatGPT\Next Chapter Project\ProjectSecondChance`.
+- Date of this checkpoint: 2026-11-23 (America/New_York). Absolute workspace: `<repo>`.
 - Branch: `feature/v0-s1-mira-spike`. VCS location/ownership verified with `git rev-parse HEAD` before edits.
 - Spec `baseline_commit` (recorded at planning): `96eb8998d3e60f81c668f656c7e1ae589712bb91`; HEAD at this session's start: `6ef92c3`.
 - BMAD: stable 6.12.4 through the project-local BGLAD launcher. `uv run --no-cache _bmad/scripts/render_skill.py --project-root <abs> --skill <abs>/.agents/skills/bmad-build` succeeded earlier in the build; spec `route: dispatch`, `status: ready-for-dev`.

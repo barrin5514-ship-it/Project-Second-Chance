@@ -1,0 +1,110 @@
+[
+  {
+    "Path": ".gitignore",
+    "Hash": "6BFDE31D58973F9151622C198EB2873B9EF3681E86DF58733C41CA57E22CA44D"
+  },
+  {
+    "Path": "README.md",
+    "Hash": "B5FC6ED4FA9A5C0B90BBD4B3EA66E1FF3B3DC9ADED6BFB16C41F188B1DD3214E"
+  },
+  {
+    "Path": "_bmad-output/implementation-artifacts/spec-e1-s2-private-documents.md",
+    "Hash": "80577DE4CE7439414E4A964482E8B3DEC5F7E7F5272ADA659E6E533250BE006C"
+  },
+  {
+    "Path": "apps/server/src/auth/authConfig.test.ts",
+    "Hash": "C82F02862D7BB26CF2BC5965E04FCCDBE498BFBF3FDBFCD3E9FAB3690BBDFECD"
+  },
+  {
+    "Path": "apps/server/src/auth/authConfig.ts",
+    "Hash": "859047BA7CB1DBFA5257F28178AA7850876AAFAE9CC394677B5090F18F29DCD8"
+  },
+  {
+    "Path": "apps/server/src/private/pdfValidation.ts",
+    "Hash": "DE153AD44481AA66F54E288221F1C176E924DCE16842CFA2B5EA15F8AE5F666E"
+  },
+  {
+    "Path": "apps/server/src/private/privateConfig.ts",
+    "Hash": "5E3AF640598B16A61530E065CDF4127FDC0CB11013D4B1C8150A05BCB67D6EF1"
+  },
+  {
+    "Path": "apps/server/src/private/privateHardening.test.ts",
+    "Hash": "FD742F0CCFA5F81EE939D0D82A05B64BA9A6B81E6CB03C54ED4CA282BAFC221C"
+  },
+  {
+    "Path": "apps/server/src/private/privateRoutes.test.ts",
+    "Hash": "92607C3A9FA4D4EA9CD965107525333F1753F1F8CE07B888A69169840F646676"
+  },
+  {
+    "Path": "apps/server/src/private/privateRoutes.ts",
+    "Hash": "6F63617D3F017419879D7ED1CFE6246FC6685792FB50B80BE2B35581A4473C3B"
+  },
+  {
+    "Path": "apps/server/src/private/privateStore.test.ts",
+    "Hash": "8EE906D74B5AF3DC2E2DFCECD856AD612A783272F77EBC9F38342A3B54D60B9F"
+  },
+  {
+    "Path": "apps/server/src/private/privateStore.ts",
+    "Hash": "4E9B2D6BE65132315853677B99E61017ABEA46C5C80F8E5625FFA4E2D4EB2C14"
+  },
+  {
+    "Path": "apps/web/src/cases/CasesPage.test.tsx",
+    "Hash": "D0D9901DC230B7F3288C34E460814A9A21D10E11578D565122710790D6085DA6"
+  },
+  {
+    "Path": "apps/web/src/cases/CasesPage.tsx",
+    "Hash": "529CDD92E2A86EC84DCF94D640A28401DDAF93D9ED97E14712F5C58916E17C01"
+  },
+  {
+    "Path": "apps/web/src/cases/casesClient.test.ts",
+    "Hash": "36EF6B53FDA270CB73D4699F268CF96C1B31ADF6836B182A6B8894AD066D3CD4"
+  },
+  {
+    "Path": "apps/web/src/cases/casesClient.ts",
+    "Hash": "C026D441CD7A567EA3D81CE582AC0F1FBBB60CF290A098071F37DCA1E414FB63"
+  },
+  {
+    "Path": "docs/adr/0002-authentication-and-sessions.md",
+    "Hash": "5C7A5259F7B7F5C36291E25E3AA865619FFA1A89984BFDC771D06B082EF57ADA"
+  },
+  {
+    "Path": "docs/adr/0003-private-storage-and-key-management.md",
+    "Hash": "DE5A7A29A44952961F34F5788CF4CBF21DA35DCB609277B9DB0E5A607A6AC2F3"
+  },
+  {
+    "Path": "docs/adr/0004-upload-validation-and-limits.md",
+    "Hash": "4B68C7D6541B0F6C0E17F4254CDBF369093D11555D417D47A20B0DB54CB90B44"
+  },
+  {
+    "Path": "docs/evidence/E1-S2-builder.md",
+    "Hash": "449734778F285A6D3E320B0474D47D300981577B3DACF13BC84D969DDF1B1B48"
+  },
+  {
+    "Path": "docs/planning/RISK_DRIVEN_DELIVERY.md",
+    "Hash": "212359046624E0BB29059F26B85D4FCD1F9AFCF6A7079CE80219A4D6C63E1384"
+  },
+  {
+    "Path": "docs/planning/RISK_REGISTER.md",
+    "Hash": "735CE5A32FF3E4C7E07AB218F73488B32CAC99FEFFA2154A3C732D199A1A8418"
+  },
+  {
+    "Path": "docs/security/threat-model.md",
+    "Hash": "16495FA95FAAF771FC2F4F76CC083BF2E2452A7CE9AB3796D3BFC19FC3418C75"
+  },
+  {
+    "Path": "playwright.config.ts",
+    "Hash": "A9CE77A98A3C15D5C95C62770CA931457F238020D388EEC04E506188CFBE8946"
+  },
+  {
+    "Path": "scripts/check-test-isolation.mjs",
+    "Hash": "C03668A8393220B3080595DA9A8958F9A638BDCB1024EC22F54A7DA1DC76E650"
+  },
+  {
+    "Path": "apps/server/src/private/isolation.test.ts",
+    "Hash": "A8F5F45AC916ADD69238062099DE5754B3A8CFCDBD809B0BCABB525D0A5806D0"
+  },
+  {
+    "Path": "apps/server/src/private/workerLifecycle.test.ts",
+    "Hash": "975E0587D6A9998CC66981EBFEAE6CDFDCFC0BDBE878482403905B7CB583538F"
+  }
+]

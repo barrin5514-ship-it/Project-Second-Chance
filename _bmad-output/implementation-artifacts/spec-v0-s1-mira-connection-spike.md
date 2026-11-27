@@ -75,7 +75,7 @@ Attempts are released as follows: a *pending* (unminted, unstarted) attempt expi
 
 ## Code Map
 
-Workspace `<owner-home>\Documents\ChatGPT\Next Chapter Project\ProjectSecondChance`. Greenfield for application code: no `package.json`, `apps/`, `src/` or tests exist yet.
+Workspace `<repo>`. Greenfield for application code: no `package.json`, `apps/`, `src/` or tests exist yet.
 
 - `AGENTS.md` â€” binding roles, `.env` rule, scope. Do not modify.
 - `docs/stories/V0-S1-mira-connection-spike.md` â€” 8 acceptance criteria; scope authority. Do not modify.

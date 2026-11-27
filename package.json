@@ -16,7 +16,9 @@
     "dev:api": "tsx watch apps/server/src/main.ts",
     "dev:web": "vite",
     "verify:secrets": "node scripts/verify-secrets.mjs",
-    "test:secrets": "node --test scripts/verify-secrets.test.mjs"
+    "test:secrets": "node --test scripts/verify-secrets.test.mjs",
+    "check:publication": "node scripts/check-publication-safety.mjs",
+    "test:publication": "node --test scripts/check-publication-safety.test.mjs"
   },
   "dependencies": {
     "@node-rs/argon2": "2.2.2",

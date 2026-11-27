@@ -1,0 +1,608 @@
+E1-S2 Claude review companion - November 25, 2026
+Source: HEAD 03b1bb8 + 21-file manifest SHA256 481079317C5D1811FDF116FE44055D38CF1D430EFCD7D70ADEDBEB5E9AEA3988
+Disposable copy, fictional data, Node 26.13.0. Probe sources live under claude-review/ in that copy; they are reproduced below.
+They are reviewer probes, not maintained tests and not builder RED evidence. Absolute paths are shortened.
+
+=== UI probes - working tree ===
+{"status":401,"switchCase":false,"stillShowsA":false,"stillShowsCaseList":false,"meCalls":2,"alerts":["You are signed out. Sign in before accessing private cases."]}
+{"status":401,"switchCase":true,"stillShowsA":true,"stillShowsCaseList":true,"meCalls":1,"alerts":[]}
+{"status":403,"switchCase":false,"stillShowsA":false,"stillShowsCaseList":false,"meCalls":2,"alerts":["You are signed out. Sign in before accessing private cases."]}
+{"status":403,"switchCase":true,"stillShowsA":true,"stillShowsCaseList":true,"meCalls":1,"alerts":[]}
+{"status":404,"switchCase":false,"stillShowsA":false,"stillShowsCaseList":false,"meCalls":2,"alerts":["You are signed out. Sign in before accessing private cases."]}
+{"status":404,"switchCase":true,"stillShowsA":true,"stillShowsCaseList":true,"meCalls":1,"alerts":[]}
+{"probe":"upload-mismatch","stillShowsA":true,"stillShowsCaseList":true,"meCalls":1,"alerts":["The upload completed, but the refreshed list could not be verified. Refresh before continuing."],"docStillShown":true}
+{"probe":"delete-document-mismatch","stillShowsA":true,"stillShowsCaseList":true,"meCalls":1,"alerts":["The document was deleted, but the refreshed list could not be verified. Refresh before continuing."],"deletedDocStillListed":true}
+{"op":"edit","refresh":503,"message":"Private storage is unavailable. Try again shortly.","deletedCaseStillOpen":true}
+{"op":"delete-case","refresh":503,"message":"Private storage is unavailable. Try again shortly.","deletedCaseStillOpen":true}
+{"op":"delete-document","refresh":503,"message":"Private storage is unavailable. Try again shortly.","deletedCaseStillOpen":true}
+{"op":"edit","refresh":0,"message":"The request timed out or could not reach the server. Try again.","deletedCaseStillOpen":true}
+{"op":"delete-case","refresh":0,"message":"The request timed out or could not reach the server. Try again.","deletedCaseStillOpen":true}
+{"op":"delete-document","refresh":0,"message":"The request timed out or could not reach the server. Try again.","deletedCaseStillOpen":true}
+   ✓ SAFE: definite upload failure must still reconcile identity > CONTROL same case: 401 after session ended 340ms
+   × SAFE: definite upload failure must still reconcile identity > case switched: 401 after session ended 364ms
+   × SAFE: definite upload failure must still reconcile identity > case switched: 403 after another account signed in 315ms
+   × SAFE: definite upload failure must still reconcile identity > case switched: 404 after another account signed in 315ms
+   × SAFE: a confirmed write must not be reported as failed when only the refresh fails > edit, refresh 503 193ms
+   × SAFE: a confirmed write must not be reported as failed when only the refresh fails > delete-case, refresh 503 237ms
+   × SAFE: a confirmed write must not be reported as failed when only the refresh fails > delete-document, refresh 503 246ms
+   × SAFE: a confirmed write must not be reported as failed when only the refresh fails > edit, refresh 0 186ms
+   × SAFE: a confirmed write must not be reported as failed when only the refresh fails > delete-case, refresh 0 257ms
+   × SAFE: a confirmed write must not be reported as failed when only the refresh fails > delete-document, refresh 0 255ms
+AssertionError: expected <strong></strong> to be null
+AssertionError: expected 'Private storage is unavailable. Try a…' to match /was (saved|deleted)|uncertain/i
+AssertionError: expected 'The request timed out or could not re…' to match /was (saved|deleted)|uncertain/i
+ Test Files  1 failed (1)
+      Tests  9 failed | 5 passed (14)
+
+=== UI probes - HEAD 03b1bb8 CasesPage.tsx swapped in, then restored ===
+{"status":401,"switchCase":false,"stillShowsA":false,"stillShowsCaseList":false,"meCalls":2,"alerts":["You are signed out. Sign in before accessing private cases."]}
+{"status":401,"switchCase":true,"stillShowsA":false,"stillShowsCaseList":false,"meCalls":2,"alerts":["You are signed out. Sign in before accessing private cases."]}
+{"status":403,"switchCase":false,"stillShowsA":false,"stillShowsCaseList":false,"meCalls":2,"alerts":["You are signed out. Sign in before accessing private cases."]}
+{"status":403,"switchCase":true,"stillShowsA":false,"stillShowsCaseList":false,"meCalls":2,"alerts":["You are signed out. Sign in before accessing private cases."]}
+{"status":404,"switchCase":false,"stillShowsA":false,"stillShowsCaseList":false,"meCalls":2,"alerts":["You are signed out. Sign in before accessing private cases."]}
+{"status":404,"switchCase":true,"stillShowsA":false,"stillShowsCaseList":false,"meCalls":2,"alerts":["You are signed out. Sign in before accessing private cases."]}
+{"op":"edit","refresh":503,"message":"Private storage is unavailable. Try again shortly.","deletedCaseStillOpen":true}
+{"op":"delete-case","refresh":503,"message":"Private storage is unavailable. Try again shortly.","deletedCaseStillOpen":true}
+{"op":"delete-document","refresh":503,"message":"Private storage is unavailable. Try again shortly.","deletedCaseStillOpen":true}
+{"op":"edit","refresh":0,"message":"The request timed out or could not reach the server. Try again.","deletedCaseStillOpen":true}
+{"op":"delete-case","refresh":0,"message":"The request timed out or could not reach the server. Try again.","deletedCaseStillOpen":true}
+{"op":"delete-document","refresh":0,"message":"The request timed out or could not reach the server. Try again.","deletedCaseStillOpen":true}
+   ✓ SAFE: definite upload failure must still reconcile identity > CONTROL same case: 401 after session ended 338ms
+   ✓ SAFE: definite upload failure must still reconcile identity > case switched: 401 after session ended 338ms
+   ✓ SAFE: definite upload failure must still reconcile identity > case switched: 403 after another account signed in 306ms
+   × CHARACTERIZE: a successful write whose refresh proves another account > upload then list owned by B 1212ms
+   × CHARACTERIZE: a successful write whose refresh proves another account > document delete then list owned by B 1155ms
+   × SAFE: a confirmed write must not be reported as failed when only the refresh fails > edit, refresh 503 180ms
+   × SAFE: a confirmed write must not be reported as failed when only the refresh fails > delete-case, refresh 503 223ms
+   × SAFE: a confirmed write must not be reported as failed when only the refresh fails > delete-document, refresh 503 244ms
+   × SAFE: a confirmed write must not be reported as failed when only the refresh fails > edit, refresh 0 202ms
+   × SAFE: a confirmed write must not be reported as failed when only the refresh fails > delete-case, refresh 0 230ms
+   × SAFE: a confirmed write must not be reported as failed when only the refresh fails > delete-document, refresh 0 208ms
+AssertionError: expected 'Private storage is unavailable. Try a…' to match /was (saved|deleted)|uncertain/i
+AssertionError: expected 'The request timed out or could not re…' to match /was (saved|deleted)|uncertain/i
+ Test Files  1 failed (1)
+      Tests  8 failed | 6 passed (14)
+
+=== Reconciliation probes ===
+{"probe":"transient-stat","missingReportedOnFaultyStart":1,"statusAfterHealthyRestart":"error","downloadableAfterHealthyRestart":false,"ciphertextFiles":1}
+{"probe":"blobs-folder-away","startupSucceeded":true,"missingBlobs":1,"status":"error","firstDeleteResult":true,"ciphertextStillExistsElsewhere":1}
+{"probe":"blobs-folder-restored","status":"error","downloadable":false,"ciphertextFiles":1}
+   × SAFE: one start with a transient exists()=false must not permanently disable an intact document 113ms
+   × CHARACTERIZE+SAFE: blobs folder away at one start (marker, DB and key correct) must not allow deletion success 49ms
+   × SAFE: restoring the blobs folder restores access 54ms
+AssertionError: expected false to be true // Object.is equality
+AssertionError: expected true not to be true // Object.is equality
+AssertionError: expected false to be true // Object.is equality
+ Test Files  1 failed (1)
+      Tests  3 failed | 1 passed (4)
+
+=== Account-switch API probe ===
+{"stale":{"create":403,"edit":403,"del":403},"listOwnerIsB":true,"listedForB":0,"aDocumentsUnderB":404}
+ ✓ claude-review/session-switch.probe.test.ts (1 test) 400ms
+   ✓ after B signs in over A, A page token cannot write and A resource IDs cannot be read 398ms
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+
+=== Late-408 probe, second run with application frames ===
+signed-in, invalid file after 408 {"statuses":["408 {\"error\":\"invalid-upload\"}"],"socketError":null}
+signed-in, no file after 408 {"statuses":["408 {\"error\":\"invalid-upload\"}"],"socketError":null}
+logged out, invalid file after 408 {"statuses":["401 {\"error\":\"unauthenticated\"}"],"socketError":null}
+signed-in, second file after 408 {"statuses":["408 {\"error\":\"invalid-upload\"}"],"socketError":null}
+server exited: null | health after: 200
+stderr lines: 37 | ERR_HTTP_HEADERS_SENT mentions: 2 | MulterError lines: 1 | stack frames: 29 | frames with absolute paths: 22
+first error lines (paths redacted):
+Error [ERR_HTTP_HEADERS_SENT]: Cannot set headers after they are sent to the client
+TypeError: Cannot read properties of undefined (reading 'destroy')
+Error [ERR_HTTP_HEADERS_SENT]: Cannot set headers after they are sent to the client
+MulterError: Too many files
+APP FRAMES:
+Error [ERR_HTTP_HEADERS_SENT]: Cannot set headers after they are sent to the client
+    at apps\server\src\private\privateRoutes.ts:295:71)
+TypeError: Cannot read properties of undefined (reading 'destroy')
+    at apps\server\src\auth\auth.ts:240:22)
+    at apps\server\src\private\privateRoutes.ts:292:20)
+Error [ERR_HTTP_HEADERS_SENT]: Cannot set headers after they are sent to the client
+    at apps\server\src\private\privateRoutes.ts:80:19)
+    at apps\server\src\private\privateRoutes.ts:281:18)
+    at apps\server\src\private\privateRoutes.ts:206:57)
+MulterError: Too many files
+
+=== Maintained suite ===
+ Test Files  32 passed (32)
+      Tests  348 passed (348)
+
+=== API suite ===
+ Test Files  18 passed (18)
+      Tests  213 passed (213)
+
+=== Provenance ===
+ Test Files  3 passed (3)
+      Tests  16 passed (16)
+
+=== Lifecycle ===
+ Test Files  1 passed (1)
+      Tests  4 passed (4)
+
+=== CV retest ===
+ Test Files  2 passed (2)
+      Tests  3 passed (3)
+
+=== Seven original CV assertions ===
+ Test Files  4 passed | 2 skipped (6)
+      Tests  7 passed | 21 skipped (28)
+
+=== Supplementary, with legacy fixture ===
+   × FIX A: real PDF parsing uses configured worker heap limits, default deadline and leaves the event loop available 274ms
+AssertionError: expected undefined to be 64 // Object.is equality
+ Test Files  1 failed | 5 passed (6)
+      Tests  1 failed | 27 passed (28)
+
+=== Original independent ===
+   × P9: disconnect releases a slot and the abandoned upload never publishes 240ms
+   × R13 known limitation: a truncated incremental update after an earlier EOF is accepted 281ms
+AssertionError: expected 429 to be 201 // Object.is equality
+AssertionError: promise rejected "UploadValidationError: invalid-upload { code: '…' }" instead of resolving
+ Test Files  1 failed (1)
+      Tests  2 failed | 9 passed (11)
+
+=== Browser suite ===
+E2E isolation preflight passed: browser tests use a disposable runtime, not the owner runtime.
+  56 passed (1.0m)
+
+=== Download control ===
+CONTROL_DOWNLOAD_ERROR EPERM
+
+=== Unchanged download spec ===
+    Error: EPERM: operation not permitted, open '<user>\AppData\Local\Temp\playwright-artifacts-ZnyHce\779f4d03-cb7c-4881-9fd0-53be67df286c'
+    Error: EPERM: operation not permitted, open '<user>\AppData\Local\Temp\playwright-artifacts-GmcyFE\13015901-05f6-4dc7-8c94-6f3a74b1055b'
+  2 failed
+
+=== Revert-one-fix results (transcribed from mutate.py and mutate_control.py console output) ===
+CV-1 E2E guard removed: maintained 348/348 | seven-CV 1 failed, 6 passed
+CV-2 old removeManaged restored: maintained 348/348 | seven-CV 1 failed, 6 passed
+CV-3 /me comparison removed: maintained 348/348 | seven-CV 7 passed | provenance 1 failed, 15 passed
+CV-3-R1/R2 provenance comparisons removed: maintained 348/348 | provenance 8 failed, 8 passed | cv-retest 1 failed, 2 passed
+Both CV-3 groups removed: maintained 348/348
+CV-4 late recheck removed: maintained 348/348 | seven-CV 1 failed, 6 passed
+CV-5 selection guard removed: maintained 348/348 | seven-CV 1 failed, 6 passed
+CV-6 early settlement restored: maintained 348/348 | seven-CV 1 failed, 6 passed
+After restore: 0 manifest mismatches in the copy.
+
+=== source: claude-review/vitest.config.ts ===
+import { defineConfig } from 'vitest/config';
+export default defineConfig({ esbuild: { jsx: 'automatic' }, test: {
+  include: ['claude-review/*.probe.test.ts', 'claude-review/*.probe.test.tsx'],
+  environment: 'node', environmentMatchGlobs: [['claude-review/*.test.tsx', 'jsdom']],
+  setupFiles: ['tests/setup.ts'], restoreMocks: true, testTimeout: 15000 } });
+
+
+=== source: claude-review/ui.probe.test.tsx ===
+/** Claude review probes. Fictional data, controlled client. "SAFE" tests assert expected behaviour. */
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, render, screen, waitFor, act } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import CasesPage from '../apps/web/src/cases/CasesPage';
+import { CasesRequestError, type CasesClient, type PrivateCase, type PrivateDocument } from '../apps/web/src/cases/casesClient';
+
+const A = { id: 'usr_a', email: 'account-a@example.test' };
+const B = { id: 'usr_b', email: 'account-b@example.test' };
+const mk = (id: string, label: string): PrivateCase => ({ id, label, jurisdiction: null, status: 'ready', createdAt: 1, updatedAt: 1 });
+const ONE = mk('case_one', 'Alpha fictional');
+const TWO = mk('case_two', 'Beta fictional');
+const DOC: PrivateDocument = { id: 'doc_a', caseId: ONE.id, originalName: 'fictional-secret.pdf', mimeType: 'application/pdf', size: 4, sha256: 'x', status: 'ready', createdAt: 1 };
+
+function defer<T>() {
+  let resolve!: (v: T) => void, reject!: (e: unknown) => void;
+  const promise = new Promise<T>((a, b) => { resolve = a; reject = b; });
+  return { promise, resolve, reject };
+}
+function setup(over: Partial<CasesClient> = {}) {
+  const state = { me: A as typeof A | null, listOwner: A.id, listError: null as unknown };
+  const client: CasesClient = {
+    csrf: vi.fn(async () => 'csrf'),
+    me: vi.fn(async () => state.me),
+    // The HEAD page refreshes through listCases(), so the injected failure must apply to both paths.
+    listCases: vi.fn(async () => {
+      if (state.listError) throw state.listError;
+      return [ONE, TWO];
+    }),
+    listCasesWithProvenance: vi.fn(async () => {
+      if (state.listError) throw state.listError;
+      return { accountId: state.listOwner, cases: [ONE, TWO] };
+    }),
+    createCase: vi.fn(async () => ONE),
+    updateCase: vi.fn(async () => ONE),
+    deleteCase: vi.fn(async () => undefined),
+    listDocuments: vi.fn(async (id: string) => (id === ONE.id ? [DOC] : [])),
+    uploadDocument: vi.fn(async () => DOC),
+    downloadDocument: vi.fn(async () => ({ blob: new Blob(['x']), filename: 'x.pdf' })),
+    deleteDocument: vi.fn(async () => undefined),
+    ...over,
+  };
+  return { client, state, user: userEvent.setup() };
+}
+type U = ReturnType<typeof userEvent.setup>;
+async function openOne(user: U) {
+  await user.click(await screen.findByRole('button', { name: /^Alpha fictional/ }));
+  await screen.findByText(/fictional-secret\.pdf/);
+}
+async function startUpload(user: U) {
+  await user.upload(screen.getByLabelText(/upload a pdf/i), new File(['%PDF'], 'f.pdf', { type: 'application/pdf' }));
+  await user.click(screen.getByRole('button', { name: /upload encrypted document/i }));
+}
+const snapshot = (client: CasesClient) => ({
+  stillShowsA: screen.queryByText(A.email) !== null,
+  stillShowsCaseList: screen.queryByRole('button', { name: /^Beta fictional/ }) !== null,
+  meCalls: (client.me as ReturnType<typeof vi.fn>).mock.calls.length,
+  alerts: screen.queryAllByRole('alert').map((n) => n.textContent),
+});
+afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+
+const losses = [
+  { status: 401, code: 'unauthenticated', next: null, name: '401 after session ended' },
+  { status: 403, code: 'forbidden', next: B, name: '403 after another account signed in' },
+  { status: 404, code: 'not-found', next: B, name: '404 after another account signed in' },
+];
+describe('SAFE: definite upload failure must still reconcile identity', () => {
+  for (const loss of losses) {
+    for (const switchCase of [false, true]) {
+      it(`${switchCase ? 'case switched' : 'CONTROL same case'}: ${loss.name}`, async () => {
+        const pending = defer<PrivateDocument>();
+        const { client, state, user } = setup({ uploadDocument: vi.fn(() => pending.promise) });
+        render(<CasesPage client={client} />);
+        await openOne(user);
+        await startUpload(user);
+        if (switchCase) {
+          await user.click(screen.getByRole('button', { name: /^Beta fictional/ }));
+          await screen.findByRole('heading', { name: /Case: Beta fictional/ });
+        }
+        state.me = loss.next;
+        await act(async () => { pending.reject(new CasesRequestError(loss.status, loss.code)); });
+        await new Promise((r) => setTimeout(r, 30));
+        console.log(JSON.stringify({ status: loss.status, switchCase, ...snapshot(client) }));
+        expect(screen.queryByText(A.email)).toBeNull();
+      });
+    }
+  }
+});
+
+describe('CHARACTERIZE: a successful write whose refresh proves another account', () => {
+  it('upload then list owned by B', async () => {
+    const { client, state, user } = setup();
+    render(<CasesPage client={client} />);
+    await openOne(user);
+    state.listOwner = B.id; state.me = B;
+    await startUpload(user);
+    await screen.findByText(/could not be verified/);
+    console.log(JSON.stringify({ probe: 'upload-mismatch', ...snapshot(client), docStillShown: screen.queryByText(/fictional-secret/) !== null }));
+  });
+  it('document delete then list owned by B', async () => {
+    const { client, state, user } = setup();
+    render(<CasesPage client={client} />);
+    await openOne(user);
+    state.listOwner = B.id; state.me = B;
+    await user.click(screen.getByRole('button', { name: /^delete document$/i }));
+    await user.click(screen.getByRole('button', { name: /confirm delete document/i }));
+    await screen.findByText(/could not be verified/);
+    console.log(JSON.stringify({ probe: 'delete-document-mismatch', ...snapshot(client), deletedDocStillListed: screen.queryByText(/fictional-secret/) !== null }));
+  });
+});
+
+describe('SAFE: a confirmed write must not be reported as failed when only the refresh fails', () => {
+  const failures = [new CasesRequestError(503, 'unavailable'), new CasesRequestError(0, 'timeout')];
+  for (const failure of failures) {
+    for (const op of ['edit', 'delete-case', 'delete-document'] as const) {
+      it(`${op}, refresh ${failure.status}`, async () => {
+        const { client, state, user } = setup();
+        render(<CasesPage client={client} />);
+        await openOne(user);
+        state.listError = failure;
+        if (op === 'edit') {
+          await user.click(screen.getByRole('button', { name: /save case details/i }));
+        } else if (op === 'delete-case') {
+          await user.click(screen.getByRole('button', { name: /^delete case$/i }));
+          await user.click(screen.getByRole('button', { name: /confirm delete case/i }));
+        } else {
+          await user.click(screen.getByRole('button', { name: /^delete document$/i }));
+          await user.click(screen.getByRole('button', { name: /confirm delete document/i }));
+        }
+        await waitFor(() => expect(screen.queryAllByRole('alert').length).toBeGreaterThan(0));
+        await new Promise((r) => setTimeout(r, 30));
+        const text = screen.getByRole('alert').textContent ?? '';
+        console.log(JSON.stringify({ op, refresh: failure.status, message: text, deletedCaseStillOpen: screen.queryByRole('heading', { name: /Case: Alpha/ }) !== null }));
+        expect(text).toMatch(/was (saved|deleted)|uncertain/i);
+      });
+    }
+  }
+});
+
+
+=== source: claude-review/reconcile.probe.test.ts ===
+/** Claude review probes: reconciliation when a blob only appears to be absent. Fictional, disposable. */
+import { it, expect } from 'vitest';
+import { createHash } from 'node:crypto';
+import { existsSync, mkdtempSync, mkdirSync, readdirSync, renameSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { createAccountStore } from '../apps/server/src/auth/accountStore';
+import { loadPrivateKeys } from '../apps/server/src/private/crypto';
+import { createPrivateStore, type PrivateFileOps } from '../apps/server/src/private/privateStore';
+
+const BYTES = Buffer.from('FICTIONAL-RECONCILE-CONTENT');
+function fixture() {
+  const root = mkdtempSync(join(tmpdir(), 'psc-claude-reconcile-'));
+  const dataDir = join(root, 'private');
+  const keys = loadPrivateKeys(join(root, 'keys'), { allowCreate: true });
+  const accounts = createAccountStore(join(root, 'auth.sqlite'));
+  const owner = accounts.create({ email: 'owner@example.test', passwordHash: 'x' }).id;
+  const boot = (fileOps?: Partial<PrivateFileOps>) => {
+    const store = createPrivateStore({ db: accounts.db, keys, dataDir, fileOps });
+    return { store, report: store.reconcile() };
+  };
+  const first = boot().store;
+  const caseId = first.createCase(owner, { label: 'Fictional', jurisdiction: null }).id;
+  const docId = first.createDocument(owner, caseId, { originalName: 'f.pdf', mimeType: 'application/pdf', bytes: BYTES,
+    sha256: createHash('sha256').update(BYTES).digest('hex') }).id;
+  const files = (dir: string): string[] => !existsSync(dir) ? [] : readdirSync(dir, { withFileTypes: true })
+    .flatMap((e) => (e.isDirectory() ? files(join(dir, e.name)) : [join(dir, e.name)]));
+  const canOpen = (s: ReturnType<typeof boot>['store']) => { try { return s.openDocument(owner, caseId, docId).bytes.equals(BYTES); } catch { return false; } };
+  const done = () => { accounts.close(); rmSync(root, { recursive: true, force: true }); };
+  return { root, dataDir, owner, caseId, docId, boot, files, canOpen, done };
+}
+
+it('SAFE: one start with a transient exists()=false must not permanently disable an intact document', () => {
+  const f = fixture();
+  try {
+    const faulty = f.boot({ exists: (p) => (p.endsWith('.psc') ? false : existsSync(p)) });
+    const healthy = f.boot();
+    const observed = {
+      missingReportedOnFaultyStart: faulty.report.missingBlobs,
+      statusAfterHealthyRestart: healthy.store.getDocument(f.owner, f.caseId, f.docId)?.status,
+      downloadableAfterHealthyRestart: f.canOpen(healthy.store),
+      ciphertextFiles: f.files(join(f.dataDir, 'blobs')).length,
+    };
+    console.log(JSON.stringify({ probe: 'transient-stat', ...observed }));
+    expect(observed.downloadableAfterHealthyRestart).toBe(true);
+  } finally { f.done(); }
+});
+
+it('CHARACTERIZE+SAFE: blobs folder away at one start (marker, DB and key correct) must not allow deletion success', () => {
+  const f = fixture();
+  try {
+    const away = join(f.root, 'blobs-moved-away');
+    renameSync(join(f.dataDir, 'blobs'), away);
+    const during = f.boot();
+    const status = during.store.getDocument(f.owner, f.caseId, f.docId)?.status;
+    let deleted: unknown;
+    try { deleted = during.store.deleteDocument(f.owner, f.caseId, f.docId); } catch (e) { deleted = (e as { code?: string }).code; }
+    console.log(JSON.stringify({ probe: 'blobs-folder-away', startupSucceeded: true, missingBlobs: during.report.missingBlobs, status,
+      firstDeleteResult: deleted, ciphertextStillExistsElsewhere: f.files(away).length }));
+    expect(deleted).not.toBe(true);
+  } finally { f.done(); }
+});
+
+it('SAFE: restoring the blobs folder restores access', () => {
+  const f = fixture();
+  try {
+    const away = join(f.root, 'blobs-moved-away');
+    renameSync(join(f.dataDir, 'blobs'), away);
+    f.boot();
+    rmSync(join(f.dataDir, 'blobs'), { recursive: true, force: true });
+    renameSync(away, join(f.dataDir, 'blobs'));
+    const restored = f.boot();
+    const ok = f.canOpen(restored.store);
+    console.log(JSON.stringify({ probe: 'blobs-folder-restored', status: restored.store.getDocument(f.owner, f.caseId, f.docId)?.status,
+      downloadable: ok, ciphertextFiles: f.files(join(f.dataDir, 'blobs')).length }));
+    expect(ok).toBe(true);
+  } finally { f.done(); }
+});
+
+it('CONTROL: an ordinary restart keeps the document downloadable', () => {
+  const f = fixture();
+  try { expect(f.canOpen(f.boot().store)).toBe(true); } finally { f.done(); }
+});
+
+
+=== source: claude-review/session-switch.probe.test.ts ===
+/** Claude review probe: one cookie jar moves from account A to B (the multi-tab case) at the API. */
+import { it, expect } from 'vitest';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import request from 'supertest';
+import { createApp, LOCAL_ORIGINS } from '../apps/server/src/app';
+import { AttemptRegistry } from '../apps/server/src/avatar/attemptRegistry';
+import { createAuth } from '../apps/server/src/auth/auth';
+import { loadPrivateKeys } from '../apps/server/src/private/crypto';
+import { createPrivateStore } from '../apps/server/src/private/privateStore';
+import { createPrivateRouter } from '../apps/server/src/private/privateRoutes';
+
+it('after B signs in over A, A page token cannot write and A resource IDs cannot be read', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'psc-claude-switch-'));
+  const auth = createAuth({ databasePath: join(root, 'a.sqlite'), sessionSecret: 'fictional-test-session-secret-32-bytes!!' });
+  const store = createPrivateStore({ db: auth.accountStore.db, keys: loadPrivateKeys(join(root, 'k'), { allowCreate: true }), dataDir: join(root, 'p') });
+  const app = createApp({ hasApiKey: false, readApiKey: () => null, fetchImpl: (async () => { throw new Error('no provider'); }) as never,
+    registry: new AttemptRegistry({ clock: { now: () => Date.now() }, tokenTtlMs: 60000 }), clock: { now: () => Date.now() },
+    auth, privateDocuments: { router: createPrivateRouter({ auth, store }) }, privateReady: () => true });
+  try {
+    const jar = request.agent(app);
+    const H = '127.0.0.1:3001';
+    const send = (m: 'post' | 'patch' | 'delete', p: string, t: string, b: object) => jar[m](p).set('Host', H).set('Origin', LOCAL_ORIGINS[0]).set('x-csrf-token', t).send(b);
+    const signIn = async (email: string) => {
+      const boot = await jar.get('/api/auth/csrf').set('Host', H);
+      const c = { email, password: 'correct horse battery staple' };
+      await send('post', '/api/auth/register', boot.body.csrfToken, c);
+      const r = await send('post', '/api/auth/login', boot.body.csrfToken, c);
+      expect(r.status).toBe(200);
+      return { token: r.body.csrfToken as string, id: r.body.user.id as string };
+    };
+    const a = await signIn('a@example.test');
+    const caseA = (await send('post', '/api/cases', a.token, { label: 'A fictional' })).body.case.id as string;
+    const b = await signIn('b@example.test');
+    const stale = {
+      create: (await send('post', '/api/cases', a.token, { label: 'stale' })).status,
+      edit: (await send('patch', `/api/cases/${caseA}`, a.token, { label: 'stale' })).status,
+      del: (await send('delete', `/api/cases/${caseA}`, a.token, { confirm: true })).status,
+    };
+    const list = await jar.get('/api/cases').set('Host', H);
+    const docs = (await jar.get(`/api/cases/${caseA}/documents`).set('Host', H)).status;
+    console.log(JSON.stringify({ stale, listOwnerIsB: list.body.accountId === b.id, listedForB: list.body.cases.length, aDocumentsUnderB: docs }));
+    expect(stale).toEqual({ create: 403, edit: 403, del: 403 });
+    expect(list.body.accountId).toBe(b.id);
+    expect(docs).toBe(404);
+  } finally { auth.close(); rmSync(root, { recursive: true, force: true }); }
+});
+
+
+=== source: claude-review/late408.mjs ===
+// Claude review probe: real main.ts, real 30 s upload window, fictional disposable runtime.
+import { spawn } from 'node:child_process';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import http from 'node:http';
+
+const runtime = mkdtempSync(join(tmpdir(), 'psc-claude-408-'));
+const PORT = 3917;
+const env = { ...process.env, PSC_RUNTIME_DIR: runtime, PSC_E2E_NO_KEY: '1', PSC_E2E_AUTH_RELAXED: '1', PORT: String(PORT) };
+delete env.PSC_PRIVATE_DATA_DIR; delete env.PSC_PRIVATE_KEY_DIR; delete env.NODE_ENV;
+const server = spawn(process.execPath, ['--import', 'tsx', 'apps/server/src/main.ts'], { env });
+let stderr = ''; let stdout = ''; let exited = null;
+server.stderr.on('data', (d) => (stderr += d)); server.stdout.on('data', (d) => (stdout += d));
+server.on('exit', (c) => (exited = c));
+
+const HOST = '127.0.0.1:3001'; const ORIGIN = 'http://127.0.0.1:5173';
+function call(method, path, { headers = {}, body } = {}) {
+  return new Promise((resolve, reject) => {
+    const req = http.request({ host: '127.0.0.1', port: PORT, method, path, headers: { Host: HOST, ...headers } }, (res) => {
+      let text = ''; res.on('data', (d) => (text += d));
+      res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, text }));
+    });
+    req.on('error', reject); req.end(body);
+  });
+}
+for (let i = 0; i < 100; i++) { try { await call('GET', '/api/health'); break; } catch { await new Promise((r) => setTimeout(r, 200)); } }
+
+async function account(email) {
+  let cookie = ''; const keep = (r) => { const c = r.headers['set-cookie']; if (c) cookie = c[0].split(';')[0]; return r; };
+  const boot = keep(await call('GET', '/api/auth/csrf'));
+  let token = JSON.parse(boot.text).csrfToken;
+  const post = async (path, obj) => keep(await call('POST', path, { headers: { Origin: ORIGIN, 'x-csrf-token': token, 'content-type': 'application/json', cookie }, body: JSON.stringify(obj) }));
+  const creds = { email, password: 'correct horse battery staple' };
+  await post('/api/auth/register', creds);
+  const login = await post('/api/auth/login', creds); token = JSON.parse(login.text).csrfToken;
+  const made = await post('/api/cases', { label: 'Fictional' });
+  return { post, get cookie() { return cookie; }, token, caseId: JSON.parse(made.text).case.id };
+}
+
+/** Send part of a multipart body, wait past the 30 s window, then finish it. */
+function slowUpload(user, finishBody, { beforeExpiry } = {}) {
+  const B = 'X-FICTIONAL-BOUNDARY';
+  const out = { statuses: [], socketError: null };
+  const done = new Promise((resolve) => {
+    const req = http.request({ host: '127.0.0.1', port: PORT, method: 'POST', path: `/api/cases/${user.caseId}/documents`,
+      headers: { Host: HOST, Origin: ORIGIN, 'x-csrf-token': user.token, cookie: user.cookie, 'content-type': `multipart/form-data; boundary=${B}`, 'transfer-encoding': 'chunked' } });
+    req.on('response', (res) => {
+      let text = ''; res.on('data', (d) => (text += d));
+      res.on('end', () => {
+        out.statuses.push(`${res.statusCode} ${text}`);
+        req.end(finishBody(B));
+        setTimeout(resolve, 2500);
+      });
+    });
+    req.on('error', (e) => { out.socketError = e.code ?? e.message; });
+    req.write(`--${B}\r\nContent-Disposition: form-data; name="note"\r\n\r\nfictional\r\n`);
+    if (beforeExpiry) setTimeout(beforeExpiry, 1000);
+  });
+  return done.then(() => out);
+}
+const filePart = (B, name, content) => `--${B}\r\nContent-Disposition: form-data; name="file"; filename="${name}"\r\nContent-Type: application/octet-stream\r\n\r\n${content}\r\n`;
+
+const [u1, u2, u3, u4] = [await account('p1@example.test'), await account('p2@example.test'), await account('p3@example.test'), await account('p4@example.test')];
+const results = await Promise.all([
+  slowUpload(u1, (B) => filePart(B, 'bad.pdf', 'not a pdf') + `--${B}--\r\n`),
+  slowUpload(u2, (B) => `--${B}--\r\n`),
+  slowUpload(u3, (B) => filePart(B, 'bad.pdf', 'not a pdf') + `--${B}--\r\n`, { beforeExpiry: () => u3.post('/api/auth/logout', {}) }),
+  slowUpload(u4, (B) => filePart(B, 'a.pdf', 'x') + filePart(B, 'b.pdf', 'y') + `--${B}--\r\n`),
+]);
+await new Promise((r) => setTimeout(r, 1500));
+const names = ['signed-in, invalid file after 408', 'signed-in, no file after 408', 'logged out, invalid file after 408', 'signed-in, second file after 408'];
+results.forEach((r, i) => console.log(names[i], JSON.stringify(r)));
+let health = null; try { health = (await call('GET', '/api/health')).status; } catch (e) { health = e.code; }
+console.log('server exited:', exited, '| health after:', health);
+const lines = stderr.split('\n');
+const count = (re) => lines.filter((l) => re.test(l)).length;
+console.log('stderr lines:', lines.length,
+  '| ERR_HTTP_HEADERS_SENT mentions:', count(/ERR_HTTP_HEADERS_SENT|Cannot set headers after/),
+  '| MulterError lines:', count(/MulterError/),
+  '| stack frames:', count(/^\s+at /),
+  '| frames with absolute paths:', count(/^\s+at .*(file:\/\/\/|[A-Z]:\\)/));
+console.log('first error lines (paths redacted):');
+console.log(lines.filter((l) => /Error/.test(l)).slice(0, 6).map((l) => l.replace(/(file:\/\/\/)?[A-Z]:[\\/][^\s)]*/g, '<path>')).join('\n'));
+console.log('APP FRAMES:');
+const wanted = lines.filter((l) => /Error|ProjectSecondChance.apps.server/.test(l));
+console.log(wanted.map((l) => (l.includes('apps') ? l.slice(0, l.indexOf('at ') + 3) + l.slice(l.indexOf('apps')) : l)).join('\n'));
+server.kill();
+process.exit(0);
+
+
+=== source: mutate.py (run from the parent of the disposable copy) ===
+import subprocess,sys,re,os,hashlib
+root=os.path.abspath('iso/ProjectSecondChance')
+def rd(p): return open(os.path.join(root,p),encoding='utf-8',newline='').read()
+def wr(p,s): open(os.path.join(root,p),'w',encoding='utf-8',newline='').write(s)
+def sub(s,old,new,count=1):
+    s2=s.replace('\r\n','\n')
+    assert s2.count(old)>=1,(old[:60])
+    return s2.replace(old,new) if count==0 else s2.replace(old,new,count)
+P='apps/web/src/cases/CasesPage.tsx'; R='apps/server/src/private/privateRoutes.ts'
+S='apps/server/src/private/privateStore.ts'; W='apps/server/src/private/pdfValidation.ts'
+def m_cv1():
+    out={}
+    for p in ['apps/server/src/auth/authConfig.ts','apps/server/src/private/privateConfig.ts']:
+        s=rd(p).replace('\r\n','\n'); s2=s.replace("throw new Error('E2E mode requires PSC_RUNTIME_DIR');","");assert s2!=s; out[p]=s2
+    return out
+def m_cv2():
+    s=rd(S).replace('\r\n','\n'); a=s.index('  const removeManaged ='); b=s.index('  // Bind this database')
+    return {S:s[:a]+"""  const removeManaged = (path: string, allowMissing = false): void => {
+    if (ops.exists(path)) { ops.unlink(path); return; }
+    if (!allowMissing) throw new PrivateStorageError('unavailable');
+  };
+
+"""+s[b:]}
+def m_provenance():
+    s=rd(P)
+    s=sub(s,"if (responseAccountId !== null && responseAccountId !== expectedAccountId) {","if (false) {")
+    s=sub(s,"return snapshot.accountId === expectedAccountId ? snapshot.cases : null;","return snapshot.cases;")
+    s=sub(s,"responseAccountId !== null ? responseAccountId === authoritative.id : renderCases;","true;")
+    return {P:s}
+def m_me():
+    return {P:sub(rd(P),"if (authoritative === null || authoritative.id !== user?.id) {","if (false) {")}
+def m_cv3_all():
+    s=m_provenance()[P]; s=s.replace("if (authoritative === null || authoritative.id !== user?.id) {","if (false) {");return {P:s}
+def m_cv4():
+    return {R:sub(rd(R),"          if (!auth.isAuthorized(req)) return auth.rejectUnauthorized(req, res);\n          return invalid(res);\n        }\n        // The window","          return invalid(res);\n        }\n        // The window")}
+def m_cv5():
+    return {P:sub(rd(P),"      if (selectedRef.current !== selected.id) return;\n      await handleError","      await handleError")}
+def m_cv6():
+    s=rd(W).replace('\r\n','\n'); a=s.index('      // Await the exit'); b=s.index('    timer = setTimeout')
+    return {W:s[:a]+"""      void worker.terminate();
+      if (error !== null) reject(error);
+      else if (result !== undefined) resolve(result);
+      else reject(new PdfValidationError('unavailable'));
+    };
+
+"""+s[b:]}
+for name,fn in [('CV-1 E2E guard removed',m_cv1),('CV-2 old removeManaged restored',m_cv2),('CV-3 /me recheck removed',m_me),('CV-3-R1+R2 provenance comparisons removed',m_provenance),('CV-3 all identity checks removed',m_cv3_all),('CV-4 late recheck removed',m_cv4),('CV-5 selection guard removed',m_cv5),('CV-6 early settle restored',m_cv6)]:
+    changes=fn(); orig={p:open(os.path.join(root,p),'rb').read() for p in changes}
+    try:
+        for p,s in changes.items(): wr(p,s)
+        r=subprocess.run('npx vitest run',cwd=root,shell=True,capture_output=True,text=True,encoding='utf-8',errors='replace',env={**os.environ,'NO_COLOR':'1'})
+        out=re.sub(r'\x1b\[[0-9;]*m','',r.stdout+r.stderr)
+        t=re.findall(r'^ +Tests +(.*)$',out,re.M)
+        fails=sorted(set(re.findall(r'^ FAIL +(.*)$',out,re.M)))
+        print(f'{name}: exit {r.returncode}; Tests {t[-1] if t else "?"}',flush=True)
+        for f in fails[:6]: print('    ',f[:200])
+    finally:
+        for p,b in orig.items(): open(os.path.join(root,p),'wb').write(b)
+

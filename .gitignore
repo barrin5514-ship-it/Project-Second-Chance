@@ -14,6 +14,7 @@ test-results/
 *.pem
 *.p12
 *.pfx
+*.psc
 
 # Private runtime data and database journals
 *.sqlite

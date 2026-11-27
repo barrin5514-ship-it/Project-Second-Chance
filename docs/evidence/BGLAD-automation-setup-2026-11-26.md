@@ -1,6 +1,6 @@
 # BGLAD automated agent workflow setup — November 26, 2026
 
-Builder/operator: DeepSeek. Project: `<owner-home>\Documents\ChatGPT\Next Chapter Project\ProjectSecondChance`. Branch `feature/e1-s2-private-documents`; HEAD `03b1bb8`; local main `e2edea5`. **No application code was changed in this setup.** All existing uncommitted application corrections, evidence, independent tests and `.vscode/` were preserved. No commit, push, PR, merge, deployment, migration or E1-S3 work occurred.
+Builder/operator: DeepSeek. Project: `<repo>`. Branch `feature/e1-s2-private-documents`; HEAD `03b1bb8`; local main `e2edea5`. **No application code was changed in this setup.** All existing uncommitted application corrections, evidence, independent tests and `.vscode/` were preserved. No commit, push, PR, merge, deployment, migration or E1-S3 work occurred.
 
 ## 1. Previous handoff failure
 

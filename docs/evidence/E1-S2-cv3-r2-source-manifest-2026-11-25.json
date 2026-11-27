@@ -1,0 +1,86 @@
+[
+  {
+    "Path": "README.md",
+    "Hash": "AB89E272289DBEA17D71D710225CDC201DA3BDE96C587480968A843B4AE8060C"
+  },
+  {
+    "Path": "_bmad-output/implementation-artifacts/spec-e1-s2-private-documents.md",
+    "Hash": "6427BC1CE93A7BB36DB25489CAE4658E859ADADCF71B3ADA355777EB93F1D8EE"
+  },
+  {
+    "Path": "apps/server/src/auth/authConfig.ts",
+    "Hash": "859047BA7CB1DBFA5257F28178AA7850876AAFAE9CC394677B5090F18F29DCD8"
+  },
+  {
+    "Path": "apps/server/src/private/pdfValidation.ts",
+    "Hash": "DE153AD44481AA66F54E288221F1C176E924DCE16842CFA2B5EA15F8AE5F666E"
+  },
+  {
+    "Path": "apps/server/src/private/privateConfig.ts",
+    "Hash": "5E3AF640598B16A61530E065CDF4127FDC0CB11013D4B1C8150A05BCB67D6EF1"
+  },
+  {
+    "Path": "apps/server/src/private/privateRoutes.test.ts",
+    "Hash": "92607C3A9FA4D4EA9CD965107525333F1753F1F8CE07B888A69169840F646676"
+  },
+  {
+    "Path": "apps/server/src/private/privateRoutes.ts",
+    "Hash": "F339235BFDE6F2321110011681703EF66E91B5EA10C938008F3839CAAD0C4B87"
+  },
+  {
+    "Path": "apps/server/src/private/privateStore.ts",
+    "Hash": "BF02DDA894B986F129723DAB734392BE265C694E1853C7BCFF8FFC70B92F0BBC"
+  },
+  {
+    "Path": "apps/web/src/cases/CasesPage.test.tsx",
+    "Hash": "202D830E82848249B1C2106233F39C6D626DF2E5DDEB50BFA709B747BD481F8D"
+  },
+  {
+    "Path": "apps/web/src/cases/CasesPage.tsx",
+    "Hash": "ECBAB54B6C6A1360373027927DE2CCDBB925ACD6E2C3417805382D9701960800"
+  },
+  {
+    "Path": "apps/web/src/cases/casesClient.test.ts",
+    "Hash": "36EF6B53FDA270CB73D4699F268CF96C1B31ADF6836B182A6B8894AD066D3CD4"
+  },
+  {
+    "Path": "apps/web/src/cases/casesClient.ts",
+    "Hash": "C026D441CD7A567EA3D81CE582AC0F1FBBB60CF290A098071F37DCA1E414FB63"
+  },
+  {
+    "Path": "docs/adr/0002-authentication-and-sessions.md",
+    "Hash": "5C7A5259F7B7F5C36291E25E3AA865619FFA1A89984BFDC771D06B082EF57ADA"
+  },
+  {
+    "Path": "docs/adr/0003-private-storage-and-key-management.md",
+    "Hash": "DE5A7A29A44952961F34F5788CF4CBF21DA35DCB609277B9DB0E5A607A6AC2F3"
+  },
+  {
+    "Path": "docs/adr/0004-upload-validation-and-limits.md",
+    "Hash": "4B68C7D6541B0F6C0E17F4254CDBF369093D11555D417D47A20B0DB54CB90B44"
+  },
+  {
+    "Path": "docs/evidence/E1-S2-builder.md",
+    "Hash": "E13759BE13FDF9167A9234464B67E3B8CD142B7F3F2B20FE8D3B3C129B68DDDE"
+  },
+  {
+    "Path": "docs/planning/RISK_DRIVEN_DELIVERY.md",
+    "Hash": "6869DA7D2211A29BDCA3B3310C620BE0BEA549163CA032D0A5EFE3CBC17FC275"
+  },
+  {
+    "Path": "docs/planning/RISK_REGISTER.md",
+    "Hash": "F6BAFA9F6BB768D3C380F14E09F59A67B50E1A0978D850B94CB030A04177EFC7"
+  },
+  {
+    "Path": "docs/security/threat-model.md",
+    "Hash": "3C5558604A9C31E517A7518F948D0358E63C483D2C517430F930661F72DC4C39"
+  },
+  {
+    "Path": "playwright.config.ts",
+    "Hash": "A9CE77A98A3C15D5C95C62770CA931457F238020D388EEC04E506188CFBE8946"
+  },
+  {
+    "Path": "scripts/check-test-isolation.mjs",
+    "Hash": "C03668A8393220B3080595DA9A8958F9A638BDCB1024EC22F54A7DA1DC76E650"
+  }
+]

@@ -1,0 +1,293 @@
+Selected actual command output — Codex E1-S2 independent checks, November 25, 2026. Application commit 3600dd6. Full local logs retained under ignored disposable copies. Exit codes and scope are recorded in the accompanying report.
+
+LOG: maintained.log
+   ✓ account page > signs in, shows only the current fictional account and signs out 1107ms
+   ✓ account page > disables both account actions while a sign-in is pending 930ms
+   ✓ account page > maps throttling to an actionable generic message without echoing credentials 849ms
+   ✓ account page > refuses a short fictional password before calling the API 678ms
+   ✓ account page > ignores a stale sign-in response after a newer attempt succeeds 997ms
+(node:2188) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/web/src/avatar/sdkContract.integration.test.ts (3 tests) 11ms
+ ✓ apps/web/src/cases/casesClient.test.ts (4 tests) 28ms
+ ✓ apps/web/src/entryPath.test.tsx (2 tests) 157ms
+
+ Test Files  31 passed (31)
+      Tests  331 passed (331)
+   Start at  11:18:50
+   Duration  25.84s (transform 2.46s, setup 25.84s, collect 20.78s, tests 37.59s, environment 49.31s, prepare 12.64s)
+
+
+LOG: api.log
+   ✓ upload concurrency > does not count a second account against the first account upload limit 670ms
+   ✓ request boundary > checks case ownership before parsing or validating an upload 553ms
+   ✓ request boundary > marks every private JSON response no-store 447ms
+   ✓ request boundary > answers a malformed multipart body with a generic 400, not a 500 333ms
+   ✓ request boundary > keeps a non-ASCII filename intact 332ms
+   ✓ startup never destroys ciphertext it cannot account for > fails closed when blobs exist but the database has no key check 405ms
+   ✓ startup never destroys ciphertext it cannot account for > does not adopt a new key when rows exist but the key check is gone 301ms
+   ✓ incomplete work stays hidden or denied > denies download while the parent case is deleting 355ms
+   ✓ incomplete work stays hidden or denied > denies download while the parent case is error 404ms
+   ✓ incomplete work stays hidden or denied > does not list or return a pending document 320ms
+
+ Test Files  17 passed (17)
+      Tests  200 passed (200)
+   Start at  11:19:18
+   Duration  11.99s (transform 1.65s, setup 18.17s, collect 13.95s, tests 24.46s, environment 6ms, prepare 9.21s)
+
+
+LOG: e2e-retry.log
+  ok 43 [chromium-narrow] › avatar.spec.ts:103:3 › request protection › a fully valid request reports the missing key as 503, never a token (351ms)
+  ok 44 [chromium-narrow] › avatar.spec.ts:114:3 › request protection › no CORS headers are emitted for a cross-origin preflight (258ms)
+  ok 45 [chromium-narrow] › avatar.spec.ts:127:3 › failure state is honest, not a fake success › Start without a key shows an unavailable state and no avatar (1.3s)
+  ok 46 [chromium-narrow] › avatar.spec.ts:137:3 › failure state is honest, not a fake success › offers a retry after the failure and stays keyboard operable (1.2s)
+  ok 47 [chromium-narrow] › avatar.spec.ts:151:3 › narrow viewport › controls remain visible and operable on a phone-sized screen (791ms)
+  ok 48 [chromium-narrow] › foundation.spec.ts:12:3 › foundation landing › states the fictional boundary and links demo accounts without a landing form (758ms)
+  ok 49 [chromium-narrow] › foundation.spec.ts:33:3 › foundation landing › reports the health contract and makes only foundation API requests (597ms)
+  ok 50 [chromium-narrow] › foundation.spec.ts:55:3 › foundation landing › shows an actionable keyboard retry after API failure and recovers (872ms)
+  ok 51 [chromium-narrow] › foundation.spec.ts:87:3 › foundation landing › treats a malformed health body as unavailable (618ms)
+  ok 52 [chromium-narrow] › foundation.spec.ts:100:3 › foundation landing › is readable and operable on a phone viewport without horizontal scrolling (551ms)
+  ok 53 [chromium-narrow] › foundation.spec.ts:112:3 › foundation landing › keeps Mira as an explicit optional page (802ms)
+  ok 54 [chromium-narrow] › private-documents.spec.ts:44:3 › private cases and encrypted documents › creates a case, uploads/downloads a PDF, and performs confirmed live deletion (2.3s)
+  ok 55 [chromium-narrow] › private-documents.spec.ts:87:3 › private cases and encrypted documents › keeps two accounts and their private cases isolated (2.5s)
+  ok 56 [chromium-narrow] › private-documents.spec.ts:114:3 › private cases and encrypted documents › keeps the private case forms operable on a narrow viewport without horizontal scrolling (1.2s)
+
+  56 passed (1.1m)
+
+LOG: probe-private.log
+
+ RUN  v2.1.8 <owner-path>
+
+ ✓ .setup/codex-private-independent.test.ts (6 tests) 1381ms
+   ✓ denies publication when a pending upload session has been logged out 516ms
+   ✓ two accounts cannot read or delete each others resources; owned download authenticates ciphertext 476ms
+
+ Test Files  1 passed (1)
+      Tests  6 passed (6)
+   Start at  11:20:39
+   Duration  4.65s (transform 456ms, setup 0ms, collect 2.29s, tests 1.38s, environment 0ms, prepare 325ms)
+
+
+LOG: probe-auth.log
+    at Object.keyGenerator (file:///<owner-path>
+    at file:///<owner-path>
+    at processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at file:///<owner-path>
+  code: 'ERR_ERL_UNEXPECTED_X_FORWARDED_FOR',
+  help: 'https://express-rate-limit.github.io/ERR_ERL_UNEXPECTED_X_FORWARDED_FOR/'
+}
+
+ ✓ .setup/codex-auth-independent.test.tsx (8 tests) 2093ms
+   ✓ spoofed forwarded addresses cannot evade the production per-source login limit 1094ms
+
+ Test Files  1 passed (1)
+      Tests  8 passed (8)
+   Start at  11:20:48
+   Duration  8.17s (transform 385ms, setup 407ms, collect 2.54s, tests 2.09s, environment 2.09s, prepare 394ms)
+
+
+LOG: probe-foundation.log
+
+ RUN  v2.1.8 <owner-path>
+
+ ✓ .setup/codex-foundation-independent.test.tsx (6 tests) 333ms
+
+ Test Files  1 passed (1)
+      Tests  6 passed (6)
+   Start at  11:20:59
+   Duration  5.26s (transform 168ms, setup 517ms, collect 2.01s, tests 333ms, environment 1.58s, prepare 284ms)
+
+
+LOG: probe-sdk-contract.log
+
+ RUN  v2.1.8 <owner-path>
+
+(node:26488) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ .setup/codex-mira-sdk-contract.test.ts (3 tests) 10ms
+
+ Test Files  1 passed (1)
+      Tests  3 passed (3)
+   Start at  11:21:08
+   Duration  3.22s (transform 95ms, setup 0ms, collect 189ms, tests 10ms, environment 2.05s, prepare 319ms)
+
+
+LOG: probe-review.log
+
+ RUN  v2.1.8 <owner-path>
+
+ ✓ .setup/codex-mira-independent.test.tsx (2 tests) 420ms
+
+ Test Files  1 passed (1)
+      Tests  2 passed (2)
+   Start at  11:21:15
+   Duration  5.95s (transform 200ms, setup 643ms, collect 1.94s, tests 420ms, environment 1.92s, prepare 370ms)
+
+
+LOG: cookie-race.log
+[WebServer] (Use `node --trace-deprecation ...` to show where the warning was created)
+[WebServer] (node:13308) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (node:30732) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 1 test using 1 worker
+
+(node:30904) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:30904) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(node:30904) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+{"initialResponses":1,"tokenFromResponse":1,"cookieFromResponse":1,"status":201}
+  ok 1 [chromium] › codex-auth-cookie-race.spec.ts:3:1 › startup remains usable when an older CSRF response delivers its cookie last (1.3s)
+
+  1 passed (8.4s)
+
+LOG: additional-delivery.log
+
+ RUN  v2.1.8 <owner-path>
+
+ ✓ tests/independent/e1-s2-codex.test.ts (11 tests) 2492ms
+   ✓ P1/P2: denies every foreign-resource operation and parent substitution without exposing the label 426ms
+   ✓ P6: a genuinely locked SQLite store fails without a published document 305ms
+   ✓ P6/P8: abrupt process exit after rename is reconciled without plaintext or a ready record 371ms
+
+ Test Files  1 passed (1)
+      Tests  11 passed (11)
+   Start at  11:31:19
+   Duration  4.06s (transform 191ms, setup 0ms, collect 991ms, tests 2.49s, environment 0ms, prepare 188ms)
+
+
+LOG: secret-tests.log
+  ✔ flags a Nuance API key pasted into source (162.1393ms)
+  ✔ flags a browser-side reference to a server-only environment value (125.5107ms)
+  ✔ flags a committed .env file (126.0477ms)
+  ✔ does not flag synthetic test credentials, placeholders or names (138.3408ms)
+  ✔ reports a line number but never the matched value (136.2543ms)
+  ✔ scopes to tracked files when a Git repository is present (568.5985ms)
+  ✔ never reads the real .env to compare values (1.3245ms)
+✔ findLeaks (1260.5718ms)
+ℹ tests 7
+ℹ suites 1
+ℹ pass 7
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1502.2164
+
+LOG: audit-system-ca.log
+found 0 vulnerabilities
+
+LOG: dependencies.log
+├── express@4.22.3
+├── file-type@22.3.0
+├── image-size@2.1.0
+├── jsdom@25.0.1
+├── multer@2.5.0
+├── passport-local@1.0.0
+├── passport@0.7.0
+├── pdf-lib@1.17.1
+├── react-dom@18.3.1
+├── react@18.3.1
+├── supertest@7.1.4
+├── tsx@4.19.2
+├── typescript@5.7.2
+├── vite@6.0.3
+└── vitest@2.1.8
+
+
+LOG: typecheck-delivery.log
+
+> project-second-chance@0.0.0 typecheck
+> tsc --noEmit -p tsconfig.json
+
+
+LOG: browser-artifact-direct.log
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[WebServer] (node:29752) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] [api] No usable NUANCE_API_KEY. Start will answer 503.
+[WebServer] (node:31072) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+[WebServer] (Use `node --trace-deprecation ...` to show where the warning was created)
+[WebServer] (node:31072) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (node:30760) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 2 tests using 1 worker
+
+(node:26896) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:26896) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(node:26896) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  x  1 [chromium] › e1-s2-download.spec.ts:4:1 › P5/P10: actual browser UTF-8 download artifact is byte-identical (2.0s)
+(node:25196) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:25196) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(node:25196) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  x  2 [chromium-narrow] › e1-s2-download.spec.ts:4:1 › P5/P10: actual browser UTF-8 download artifact is byte-identical (1.7s)
+
+
+  1) [chromium] › e1-s2-download.spec.ts:4:1 › P5/P10: actual browser UTF-8 download artifact is byte-identical
+
+    Error: EPERM: operation not permitted, open '<owner-home>\AppData\Local\Temp\playwright-artifacts-OgNDuo\5dff1422-f802-4d96-bbaf-200b6cd5ec1f'
+
+      31 |   expect(output).not.toBeNull();
+      32 |   expect(await download.failure()).toBeNull();
+    > 33 |   expect(readFileSync(output!).equals(bytes)).toBe(true);
+         |          ^
+      34 | });
+      35 |
+        at <repo>\.setup\codex-e1s2-run-20261125\ProjectSecondChance\tests\independent\e1-s2-download.spec.ts:33:10
+
+    [31mTest timeout of 60000ms exceeded.[39m
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\codex-independent-download\e1-s2-download-P5-P10-actu-dfeb9--artifact-is-byte-identical-chromium\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  2) [chromium-narrow] › e1-s2-download.spec.ts:4:1 › P5/P10: actual browser UTF-8 download artifact is byte-identical
+
+    Error: EPERM: operation not permitted, open '<owner-home>\AppData\Local\Temp\playwright-artifacts-ucVE8v\de67772b-8c71-4efd-a53e-786a7c19c97c'
+
+      31 |   expect(output).not.toBeNull();
+      32 |   expect(await download.failure()).toBeNull();
+    > 33 |   expect(readFileSync(output!).equals(bytes)).toBe(true);
+         |          ^
+      34 | });
+      35 |
+        at <repo>\.setup\codex-e1s2-run-20261125\ProjectSecondChance\tests\independent\e1-s2-download.spec.ts:33:10
+
+    [31mTest timeout of 60000ms exceeded.[39m
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\codex-independent-download\e1-s2-download-P5-P10-actu-dfeb9--artifact-is-byte-identical-chromium-narrow\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  2 failed
+    [chromium] › e1-s2-download.spec.ts:4:1 › P5/P10: actual browser UTF-8 download artifact is byte-identical
+    [chromium-narrow] › e1-s2-download.spec.ts:4:1 › P5/P10: actual browser UTF-8 download artifact is byte-identical
+
+LOG: download-control.log
+CONTROL_DOWNLOAD_ERROR EPERM
+
+LOG: production build (first disposable copy)
+
+vite v6.0.3 building for production...
+transforming...
+✓ 42 modules transformed.
+rendering chunks...
+computing gzip size...
+../../dist/web/index.html                   0.66 kB │ gzip:   0.40 kB
+../../dist/web/assets/index-BFKA00az.css    6.83 kB │ gzip:   1.57 kB
+../../dist/web/assets/sdk-C45RHlCG.js       0.76 kB │ gzip:   0.45 kB
+../../dist/web/assets/App-Dp7Uc4v_.js       9.92 kB │ gzip:   3.91 kB
+../../dist/web/assets/index-CZhqSV-Y.js   173.54 kB │ gzip:  54.32 kB
+../../dist/web/assets/js-sdk-DglVioxy.js  664.09 kB │ gzip: 176.74 kB
+✓ built in 2.16s
+
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.

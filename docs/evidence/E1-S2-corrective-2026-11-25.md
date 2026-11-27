@@ -6,7 +6,7 @@ Builder: DeepSeek. Branch: `feature/e1-s2-private-documents`. Application checkp
 
 | Item | Observed |
 | --- | --- |
-| Absolute root | `<owner-home>\Documents\ChatGPT\Next Chapter Project\ProjectSecondChance` |
+| Absolute root | `<repo>` |
 | Branch / HEAD | `feature/e1-s2-private-documents` / `3600dd66d355804ac1f0232bc57594259ad75900` |
 | Local main | `e2edea5a11ba250b881449acaa951844e38abba0` |
 | Upstream | `origin/feature/e1-s2-private-documents`; locally equal before changes, not fetched |

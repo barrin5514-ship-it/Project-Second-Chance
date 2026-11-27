@@ -1,0 +1,3032 @@
+E1-S2 CR-5-R1 independent Claude review: companion (November 25-26, 2026)
+HEAD 03b1bb8 plus the 27-file manifest. Windows, Node 26.13.0, npm 11.20.0. Fictional data only.
+Probes ran only in a disposable copy outside the repository. Local paths are redacted in this new file only:
+<repo> = project root, <SP> = session scratch directory, <local-user> = user home.
+The probe source and logs are evidence, not maintained tests. Old probes that now fail are kept as they ran.
+
+====================================================================================================
+PROBE SOURCE claude-review/late408.mjs
+====================================================================================================
+// Claude review probe: real main.ts, real 30 s upload window, fictional disposable runtime.
+import { spawn } from 'node:child_process';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import http from 'node:http';
+
+const runtime = mkdtempSync(join(tmpdir(), 'psc-claude-408-'));
+const PORT = 3917;
+const env = { ...process.env, PSC_RUNTIME_DIR: runtime, PSC_E2E_NO_KEY: '1', PSC_E2E_AUTH_RELAXED: '1', PORT: String(PORT) };
+delete env.PSC_PRIVATE_DATA_DIR; delete env.PSC_PRIVATE_KEY_DIR; delete env.NODE_ENV;
+const server = spawn(process.execPath, ['--import', 'tsx', 'apps/server/src/main.ts'], { env });
+let stderr = ''; let stdout = ''; let exited = null;
+server.stderr.on('data', (d) => (stderr += d)); server.stdout.on('data', (d) => (stdout += d));
+server.on('exit', (c) => (exited = c));
+
+const HOST = '127.0.0.1:3001'; const ORIGIN = 'http://127.0.0.1:5173';
+function call(method, path, { headers = {}, body } = {}) {
+  return new Promise((resolve, reject) => {
+    const req = http.request({ host: '127.0.0.1', port: PORT, method, path, headers: { Host: HOST, ...headers } }, (res) => {
+      let text = ''; res.on('data', (d) => (text += d));
+      res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, text }));
+    });
+    req.on('error', reject); req.end(body);
+  });
+}
+for (let i = 0; i < 100; i++) { try { await call('GET', '/api/health'); break; } catch { await new Promise((r) => setTimeout(r, 200)); } }
+
+async function account(email) {
+  let cookie = ''; const keep = (r) => { const c = r.headers['set-cookie']; if (c) cookie = c[0].split(';')[0]; return r; };
+  const boot = keep(await call('GET', '/api/auth/csrf'));
+  let token = JSON.parse(boot.text).csrfToken;
+  const post = async (path, obj) => keep(await call('POST', path, { headers: { Origin: ORIGIN, 'x-csrf-token': token, 'content-type': 'application/json', cookie }, body: JSON.stringify(obj) }));
+  const creds = { email, password: 'correct horse battery staple' };
+  await post('/api/auth/register', creds);
+  const login = await post('/api/auth/login', creds); token = JSON.parse(login.text).csrfToken;
+  const made = await post('/api/cases', { label: 'Fictional' });
+  return { post, get cookie() { return cookie; }, token, caseId: JSON.parse(made.text).case.id };
+}
+
+/** Send part of a multipart body, wait past the 30 s window, then finish it. */
+function slowUpload(user, finishBody, { beforeExpiry } = {}) {
+  const B = 'X-FICTIONAL-BOUNDARY';
+  const out = { statuses: [], socketError: null };
+  const done = new Promise((resolve) => {
+    const req = http.request({ host: '127.0.0.1', port: PORT, method: 'POST', path: `/api/cases/${user.caseId}/documents`,
+      headers: { Host: HOST, Origin: ORIGIN, 'x-csrf-token': user.token, cookie: user.cookie, 'content-type': `multipart/form-data; boundary=${B}`, 'transfer-encoding': 'chunked' } });
+    req.on('response', (res) => {
+      let text = ''; res.on('data', (d) => (text += d));
+      res.on('end', () => {
+        out.statuses.push(`${res.statusCode} ${text}`);
+        req.end(finishBody(B));
+        setTimeout(resolve, 2500);
+      });
+    });
+    req.on('error', (e) => { out.socketError = e.code ?? e.message; });
+    req.write(`--${B}\r\nContent-Disposition: form-data; name="note"\r\n\r\nfictional\r\n`);
+    if (beforeExpiry) setTimeout(beforeExpiry, 1000);
+  });
+  return done.then(() => out);
+}
+const filePart = (B, name, content) => `--${B}\r\nContent-Disposition: form-data; name="file"; filename="${name}"\r\nContent-Type: application/octet-stream\r\n\r\n${content}\r\n`;
+
+const [u1, u2, u3, u4] = [await account('p1@example.test'), await account('p2@example.test'), await account('p3@example.test'), await account('p4@example.test')];
+const results = await Promise.all([
+  slowUpload(u1, (B) => filePart(B, 'bad.pdf', 'not a pdf') + `--${B}--\r\n`),
+  slowUpload(u2, (B) => `--${B}--\r\n`),
+  slowUpload(u3, (B) => filePart(B, 'bad.pdf', 'not a pdf') + `--${B}--\r\n`, { beforeExpiry: () => u3.post('/api/auth/logout', {}) }),
+  slowUpload(u4, (B) => filePart(B, 'a.pdf', 'x') + filePart(B, 'b.pdf', 'y') + `--${B}--\r\n`),
+]);
+await new Promise((r) => setTimeout(r, 1500));
+const names = ['signed-in, invalid file after 408', 'signed-in, no file after 408', 'logged out, invalid file after 408', 'signed-in, second file after 408'];
+results.forEach((r, i) => console.log(names[i], JSON.stringify(r)));
+let health = null; try { health = (await call('GET', '/api/health')).status; } catch (e) { health = e.code; }
+console.log('server exited:', exited, '| health after:', health);
+const lines = stderr.split('\n');
+const count = (re) => lines.filter((l) => re.test(l)).length;
+console.log('stderr lines:', lines.length,
+  '| ERR_HTTP_HEADERS_SENT mentions:', count(/ERR_HTTP_HEADERS_SENT|Cannot set headers after/),
+  '| MulterError lines:', count(/MulterError/),
+  '| stack frames:', count(/^\s+at /),
+  '| frames with absolute paths:', count(/^\s+at .*(file:\/\/\/|[A-Z]:\\)/));
+console.log('first error lines (paths redacted):');
+console.log(lines.filter((l) => /Error/.test(l)).slice(0, 6).map((l) => l.replace(/(file:\/\/\/)?[A-Z]:[\\/][^\s)]*/g, '<path>')).join('\n'));
+console.log('APP FRAMES:');
+const wanted = lines.filter((l) => /Error|ProjectSecondChance.apps.server/.test(l));
+console.log(wanted.map((l) => (l.includes('apps') ? l.slice(0, l.indexOf('at ') + 3) + l.slice(l.indexOf('apps')) : l)).join('\n'));
+server.kill();
+process.exit(0);
+
+====================================================================================================
+PROBE SOURCE claude-review/reconcile-adapted.probe.test.ts
+====================================================================================================
+/** Adapted copy of the prior blob-folder probes: startup is now expected to fail closed. The original is unchanged. */
+import { it, expect } from 'vitest';
+import { createHash } from 'node:crypto';
+import { existsSync, mkdtempSync, renameSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { createAccountStore } from '../apps/server/src/auth/accountStore';
+import { loadPrivateKeys } from '../apps/server/src/private/crypto';
+import { createPrivateStore } from '../apps/server/src/private/privateStore';
+
+it('blob folder away at startup fails closed, is not recreated, and restoring it restores access', () => {
+  const root = mkdtempSync(join(tmpdir(), 'psc-claude-reconcile2-'));
+  const dataDir = join(root, 'private');
+  const keys = loadPrivateKeys(join(root, 'keys'), { allowCreate: true });
+  const accounts = createAccountStore(join(root, 'auth.sqlite'));
+  const owner = accounts.create({ email: 'owner@example.test', passwordHash: 'x' }).id;
+  const boot = () => { const store = createPrivateStore({ db: accounts.db, keys, dataDir }); store.reconcile(); return store; };
+  try {
+    const store = boot();
+    const caseId = store.createCase(owner, { label: 'Fictional', jurisdiction: null }).id;
+    const bytes = Buffer.from('FICTIONAL');
+    const docId = store.createDocument(owner, caseId, { originalName: 'f.pdf', mimeType: 'application/pdf', bytes,
+      sha256: createHash('sha256').update(bytes).digest('hex') }).id;
+    const away = join(root, 'away');
+    renameSync(join(dataDir, 'blobs'), away);
+    expect(boot).toThrow();
+    const recreated = existsSync(join(dataDir, 'blobs'));
+    renameSync(away, join(dataDir, 'blobs'));
+    const readable = boot().openDocument(owner, caseId, docId).bytes.equals(bytes);
+    console.log(JSON.stringify({ probe: 'adapted', startupFailedClosed: true, rootRecreated: recreated, readableAfterRestore: readable }));
+    expect([recreated, readable]).toEqual([false, true]);
+  } finally { accounts.close(); rmSync(root, { recursive: true, force: true }); }
+});
+
+====================================================================================================
+PROBE SOURCE claude-review/reconcile.probe.test.ts
+====================================================================================================
+/** Claude review probes: reconciliation when a blob only appears to be absent. Fictional, disposable. */
+import { it, expect } from 'vitest';
+import { createHash } from 'node:crypto';
+import { existsSync, mkdtempSync, mkdirSync, readdirSync, renameSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { createAccountStore } from '../apps/server/src/auth/accountStore';
+import { loadPrivateKeys } from '../apps/server/src/private/crypto';
+import { createPrivateStore, type PrivateFileOps } from '../apps/server/src/private/privateStore';
+
+const BYTES = Buffer.from('FICTIONAL-RECONCILE-CONTENT');
+function fixture() {
+  const root = mkdtempSync(join(tmpdir(), 'psc-claude-reconcile-'));
+  const dataDir = join(root, 'private');
+  const keys = loadPrivateKeys(join(root, 'keys'), { allowCreate: true });
+  const accounts = createAccountStore(join(root, 'auth.sqlite'));
+  const owner = accounts.create({ email: 'owner@example.test', passwordHash: 'x' }).id;
+  const boot = (fileOps?: Partial<PrivateFileOps>) => {
+    const store = createPrivateStore({ db: accounts.db, keys, dataDir, fileOps });
+    return { store, report: store.reconcile() };
+  };
+  const first = boot().store;
+  const caseId = first.createCase(owner, { label: 'Fictional', jurisdiction: null }).id;
+  const docId = first.createDocument(owner, caseId, { originalName: 'f.pdf', mimeType: 'application/pdf', bytes: BYTES,
+    sha256: createHash('sha256').update(BYTES).digest('hex') }).id;
+  const files = (dir: string): string[] => !existsSync(dir) ? [] : readdirSync(dir, { withFileTypes: true })
+    .flatMap((e) => (e.isDirectory() ? files(join(dir, e.name)) : [join(dir, e.name)]));
+  const canOpen = (s: ReturnType<typeof boot>['store']) => { try { return s.openDocument(owner, caseId, docId).bytes.equals(BYTES); } catch { return false; } };
+  const done = () => { accounts.close(); rmSync(root, { recursive: true, force: true }); };
+  return { root, dataDir, owner, caseId, docId, boot, files, canOpen, done };
+}
+
+it('SAFE: one start with a transient exists()=false must not permanently disable an intact document', () => {
+  const f = fixture();
+  try {
+    const faulty = f.boot({ exists: (p) => (p.endsWith('.psc') ? false : existsSync(p)) });
+    const healthy = f.boot();
+    const observed = {
+      missingReportedOnFaultyStart: faulty.report.missingBlobs,
+      statusAfterHealthyRestart: healthy.store.getDocument(f.owner, f.caseId, f.docId)?.status,
+      downloadableAfterHealthyRestart: f.canOpen(healthy.store),
+      ciphertextFiles: f.files(join(f.dataDir, 'blobs')).length,
+    };
+    console.log(JSON.stringify({ probe: 'transient-stat', ...observed }));
+    expect(observed.downloadableAfterHealthyRestart).toBe(true);
+  } finally { f.done(); }
+});
+
+it('CHARACTERIZE+SAFE: blobs folder away at one start (marker, DB and key correct) must not allow deletion success', () => {
+  const f = fixture();
+  try {
+    const away = join(f.root, 'blobs-moved-away');
+    renameSync(join(f.dataDir, 'blobs'), away);
+    const during = f.boot();
+    const status = during.store.getDocument(f.owner, f.caseId, f.docId)?.status;
+    let deleted: unknown;
+    try { deleted = during.store.deleteDocument(f.owner, f.caseId, f.docId); } catch (e) { deleted = (e as { code?: string }).code; }
+    console.log(JSON.stringify({ probe: 'blobs-folder-away', startupSucceeded: true, missingBlobs: during.report.missingBlobs, status,
+      firstDeleteResult: deleted, ciphertextStillExistsElsewhere: f.files(away).length }));
+    expect(deleted).not.toBe(true);
+  } finally { f.done(); }
+});
+
+it('SAFE: restoring the blobs folder restores access', () => {
+  const f = fixture();
+  try {
+    const away = join(f.root, 'blobs-moved-away');
+    renameSync(join(f.dataDir, 'blobs'), away);
+    f.boot();
+    rmSync(join(f.dataDir, 'blobs'), { recursive: true, force: true });
+    renameSync(away, join(f.dataDir, 'blobs'));
+    const restored = f.boot();
+    const ok = f.canOpen(restored.store);
+    console.log(JSON.stringify({ probe: 'blobs-folder-restored', status: restored.store.getDocument(f.owner, f.caseId, f.docId)?.status,
+      downloadable: ok, ciphertextFiles: f.files(join(f.dataDir, 'blobs')).length }));
+    expect(ok).toBe(true);
+  } finally { f.done(); }
+});
+
+it('CONTROL: an ordinary restart keeps the document downloadable', () => {
+  const f = fixture();
+  try { expect(f.canOpen(f.boot().store)).toBe(true); } finally { f.done(); }
+});
+
+====================================================================================================
+PROBE SOURCE claude-review/refresh-auth.probe.test.tsx
+====================================================================================================
+/** Claude probe: a write is confirmed, then the session is lost before or during the refresh. */
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import CasesPage from '../apps/web/src/cases/CasesPage';
+import { CasesRequestError, type CasesClient, type PrivateCase, type PrivateDocument } from '../apps/web/src/cases/casesClient';
+
+const A = { id: 'usr_a', email: 'account-a@example.test' };
+const B = { id: 'usr_b', email: 'account-b@example.test' };
+const mk = (id: string, label: string): PrivateCase => ({ id, label, jurisdiction: null, status: 'ready', createdAt: 1, updatedAt: 1 });
+const ONE = mk('case_one', 'Alpha fictional');
+const TWO = mk('case_two', 'Beta fictional');
+const DOC: PrivateDocument = { id: 'doc_a', caseId: ONE.id, originalName: 'fictional-secret.pdf', mimeType: 'application/pdf', size: 4, sha256: 'x', status: 'ready', createdAt: 1 };
+
+type Stage = 'list-401' | 'documents-401' | 'documents-404-other-account' | 'control-503';
+type Op = 'create' | 'edit' | 'upload' | 'delete-document' | 'delete-case';
+
+function setup(stage: Stage) {
+  const state = { armed: false, fired: 0, me: A as typeof A | null };
+  const lose = () => {
+    state.me = stage === 'documents-404-other-account' ? B : stage === 'control-503' ? A : null;
+  };
+  const mutate = async () => { state.armed = true; };
+  const listFails = async () => {
+    if (state.armed && (stage === 'list-401' || stage === 'control-503')) {
+      state.fired++; lose();
+      throw new CasesRequestError(stage === 'list-401' ? 401 : 503, stage === 'list-401' ? 'unauthenticated' : 'unavailable');
+    }
+    return [ONE, TWO];
+  };
+  const client: CasesClient = {
+    csrf: vi.fn(async () => 'csrf'),
+    me: vi.fn(async () => state.me),
+    // Both list methods fail: older page versions refresh through listCases().
+    listCases: vi.fn(listFails),
+    listCasesWithProvenance: vi.fn(async () => ({ accountId: A.id, cases: await listFails() })),
+    createCase: vi.fn(async () => { await mutate(); return ONE; }),
+    updateCase: vi.fn(async () => { await mutate(); return ONE; }),
+    deleteCase: vi.fn(mutate),
+    deleteDocument: vi.fn(mutate),
+    uploadDocument: vi.fn(async () => { await mutate(); return DOC; }),
+    listDocuments: vi.fn(async (id: string) => {
+      if (state.armed && stage.startsWith('documents-')) {
+        state.fired++; lose();
+        const status = stage === 'documents-401' ? 401 : 404;
+        throw new CasesRequestError(status, status === 401 ? 'unauthenticated' : 'not-found');
+      }
+      return id === ONE.id ? [DOC] : [];
+    }),
+    downloadDocument: vi.fn(async () => ({ blob: new Blob(['x']), filename: 'x.pdf' })),
+  };
+  return { client, state, user: userEvent.setup() };
+}
+
+async function perform(op: Op, user: ReturnType<typeof userEvent.setup>) {
+  await user.click(await screen.findByRole('button', { name: /^Alpha fictional/ }));
+  await screen.findByText(/fictional-secret\.pdf/);
+  if (op === 'create') {
+    await user.type(screen.getByLabelText('Case label'), 'New fictional');
+    await user.click(screen.getByRole('button', { name: /^create case$/i }));
+  } else if (op === 'edit') {
+    await user.click(screen.getByRole('button', { name: /save case details/i }));
+  } else if (op === 'upload') {
+    await user.upload(screen.getByLabelText(/upload a pdf/i), new File(['%PDF'], 'f.pdf', { type: 'application/pdf' }));
+    await user.click(screen.getByRole('button', { name: /upload encrypted document/i }));
+  } else if (op === 'delete-document') {
+    await user.click(screen.getByRole('button', { name: /^delete document$/i }));
+    await user.click(screen.getByRole('button', { name: /confirm delete document/i }));
+  } else {
+    await user.click(screen.getByRole('button', { name: /^delete case$/i }));
+    await user.click(screen.getByRole('button', { name: /confirm delete case/i }));
+  }
+}
+afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+
+const stages: Stage[] = ['list-401', 'documents-401', 'documents-404-other-account', 'control-503'];
+for (const stage of stages) {
+  describe(stage, () => {
+    const ops: Op[] = stage.startsWith('documents-')
+      ? ['create', 'edit', 'upload', 'delete-document']
+      : ['create', 'edit', 'upload', 'delete-document', 'delete-case'];
+    for (const op of ops) {
+      it(`${stage} after confirmed ${op}`, async () => {
+        const { client, state, user } = setup(stage);
+        render(<CasesPage client={client} />);
+        await perform(op, user);
+        await waitFor(() => expect(state.fired).toBeGreaterThan(0));
+        await new Promise((r) => setTimeout(r, 60));
+        const shown = screen.queryByText(A.email) !== null;
+        console.log(JSON.stringify({ stage, op, injectedFired: state.fired > 0, accountAStillShown: shown,
+          meCalls: (client.me as ReturnType<typeof vi.fn>).mock.calls.length,
+          alerts: screen.queryAllByRole('alert').map((n) => n.textContent) }));
+        // Lost or changed session must end the view; an ordinary 503 with the same account must not.
+        expect(shown).toBe(stage === 'control-503');
+      });
+    }
+  });
+}
+
+====================================================================================================
+PROBE SOURCE claude-review/session-switch.probe.test.ts
+====================================================================================================
+/** Claude review probe: one cookie jar moves from account A to B (the multi-tab case) at the API. */
+import { it, expect } from 'vitest';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import request from 'supertest';
+import { createApp, LOCAL_ORIGINS } from '../apps/server/src/app';
+import { AttemptRegistry } from '../apps/server/src/avatar/attemptRegistry';
+import { createAuth } from '../apps/server/src/auth/auth';
+import { loadPrivateKeys } from '../apps/server/src/private/crypto';
+import { createPrivateStore } from '../apps/server/src/private/privateStore';
+import { createPrivateRouter } from '../apps/server/src/private/privateRoutes';
+
+it('after B signs in over A, A page token cannot write and A resource IDs cannot be read', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'psc-claude-switch-'));
+  const auth = createAuth({ databasePath: join(root, 'a.sqlite'), sessionSecret: 'fictional-test-session-secret-32-bytes!!' });
+  const store = createPrivateStore({ db: auth.accountStore.db, keys: loadPrivateKeys(join(root, 'k'), { allowCreate: true }), dataDir: join(root, 'p') });
+  const app = createApp({ hasApiKey: false, readApiKey: () => null, fetchImpl: (async () => { throw new Error('no provider'); }) as never,
+    registry: new AttemptRegistry({ clock: { now: () => Date.now() }, tokenTtlMs: 60000 }), clock: { now: () => Date.now() },
+    auth, privateDocuments: { router: createPrivateRouter({ auth, store }) }, privateReady: () => true });
+  try {
+    const jar = request.agent(app);
+    const H = '127.0.0.1:3001';
+    const send = (m: 'post' | 'patch' | 'delete', p: string, t: string, b: object) => jar[m](p).set('Host', H).set('Origin', LOCAL_ORIGINS[0]).set('x-csrf-token', t).send(b);
+    const signIn = async (email: string) => {
+      const boot = await jar.get('/api/auth/csrf').set('Host', H);
+      const c = { email, password: 'correct horse battery staple' };
+      await send('post', '/api/auth/register', boot.body.csrfToken, c);
+      const r = await send('post', '/api/auth/login', boot.body.csrfToken, c);
+      expect(r.status).toBe(200);
+      return { token: r.body.csrfToken as string, id: r.body.user.id as string };
+    };
+    const a = await signIn('a@example.test');
+    const caseA = (await send('post', '/api/cases', a.token, { label: 'A fictional' })).body.case.id as string;
+    const b = await signIn('b@example.test');
+    const stale = {
+      create: (await send('post', '/api/cases', a.token, { label: 'stale' })).status,
+      edit: (await send('patch', `/api/cases/${caseA}`, a.token, { label: 'stale' })).status,
+      del: (await send('delete', `/api/cases/${caseA}`, a.token, { confirm: true })).status,
+    };
+    const list = await jar.get('/api/cases').set('Host', H);
+    const docs = (await jar.get(`/api/cases/${caseA}/documents`).set('Host', H)).status;
+    console.log(JSON.stringify({ stale, listOwnerIsB: list.body.accountId === b.id, listedForB: list.body.cases.length, aDocumentsUnderB: docs }));
+    expect(stale).toEqual({ create: 403, edit: 403, del: 403 });
+    expect(list.body.accountId).toBe(b.id);
+    expect(docs).toBe(404);
+  } finally { auth.close(); rmSync(root, { recursive: true, force: true }); }
+});
+
+====================================================================================================
+PROBE SOURCE claude-review/shard.probe.test.ts
+====================================================================================================
+/** Claude probe: does one upload during directory loss defeat the new parent-directory checks? Fictional only. */
+import { it, expect } from 'vitest';
+import { createHash } from 'node:crypto';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { basename, join } from 'node:path';
+import request from 'supertest';
+import { PDFDocument } from 'pdf-lib';
+import { createApp, LOCAL_ORIGINS } from '../apps/server/src/app';
+import { AttemptRegistry } from '../apps/server/src/avatar/attemptRegistry';
+import { createAuth } from '../apps/server/src/auth/auth';
+import { createAccountStore } from '../apps/server/src/auth/accountStore';
+import { loadPrivateKeys } from '../apps/server/src/private/crypto';
+import { createPrivateStore } from '../apps/server/src/private/privateStore';
+import { createPrivateRouter } from '../apps/server/src/private/privateRoutes';
+
+const files = (dir: string): string[] => !existsSync(dir) ? [] : readdirSync(dir, { withFileTypes: true })
+  .flatMap((e) => (e.isDirectory() ? files(join(dir, e.name)) : [join(dir, e.name)]));
+const sha = (p: string) => createHash('sha256').update(readFileSync(p)).digest('hex');
+const code = (fn: () => unknown): string => { try { return `ok:${String(fn())}`; } catch (e) { return `throw:${(e as { code?: string }).code ?? (e as Error).message}`; } };
+
+type Loss = 'blob-root' | 'blob-shard' | 'whole-data-dir';
+function fixture() {
+  const root = mkdtempSync(join(tmpdir(), 'psc-claude-shard-'));
+  const dataDir = join(root, 'private');
+  const keys = loadPrivateKeys(join(root, 'keys'), { allowCreate: true });
+  const accounts = createAccountStore(join(root, 'auth.sqlite'));
+  const owner = accounts.create({ email: 'owner@example.test', passwordHash: 'x' }).id;
+  const store = createPrivateStore({ db: accounts.db, keys, dataDir });
+  const caseId = store.createCase(owner, { label: 'Fictional', jurisdiction: null }).id;
+  const add = (text: string) => { const bytes = Buffer.from(text);
+    return store.createDocument(owner, caseId, { originalName: 'f.pdf', mimeType: 'application/pdf', bytes,
+      sha256: createHash('sha256').update(bytes).digest('hex') }).id; };
+  const first = add('FICTIONAL-FIRST');
+  const blob = files(join(dataDir, 'blobs'))[0]!;
+  const digest = sha(blob);
+  const source = loss === 'blob-root' ? join(dataDir, 'blobs') : '';
+  void source;
+  return { root, dataDir, keys, accounts, owner, store, caseId, add, first, blob, digest,
+    done: () => { accounts.close(); rmSync(root, { recursive: true, force: true }); } };
+}
+let loss: Loss = 'blob-root';
+function lose(f: ReturnType<typeof fixture>, kind: Loss) {
+  const target = kind === 'blob-root' ? join(f.dataDir, 'blobs') : kind === 'blob-shard' ? join(f.dataDir, 'blobs', basename(join(f.blob, '..'))) : f.dataDir;
+  const away = join(f.root, 'moved-away');
+  renameSync(target, away);
+  return { away, intact: () => files(away).some((p) => basename(p) === basename(f.blob) && sha(p) === f.digest) };
+}
+
+it('INFO: every generated blob name lands in the same shard directory', () => {
+  const f = fixture();
+  try {
+    for (let i = 0; i < 12; i++) f.add(`FICTIONAL-${i}`);
+    const shards = readdirSync(join(f.dataDir, 'blobs'));
+    console.log(JSON.stringify({ probe: 'shards', documents: 13, shardDirectories: shards }));
+    expect(shards).toEqual(['bl']);
+  } finally { f.done(); }
+});
+
+for (const kind of ['blob-root', 'blob-shard'] as Loss[]) {
+  it(`CONTROL ${kind} lost, no upload: reconcile and two delete attempts fail closed`, () => {
+    const f = fixture(); const gone = lose(f, kind);
+    try {
+      const r = code(() => f.store.reconcile());
+      const d1 = code(() => f.store.deleteDocument(f.owner, f.caseId, f.first));
+      const d2 = code(() => f.store.deleteDocument(f.owner, f.caseId, f.first));
+      console.log(JSON.stringify({ probe: 'control', kind, reconcile: r, delete1: d1, delete2: d2, ciphertextIntactElsewhere: gone.intact() }));
+      expect([d1, d2]).toEqual(['throw:unavailable', 'throw:unavailable']);
+    } finally { f.done(); }
+  });
+}
+
+for (const kind of ['blob-root', 'blob-shard', 'whole-data-dir'] as Loss[]) {
+  it(`SAFE ${kind} lost, one upload, then delete: no success while ciphertext exists elsewhere`, () => {
+    const f = fixture(); const gone = lose(f, kind);
+    try {
+      const upload = code(() => (f.add('FICTIONAL-DURING-OUTAGE') ? 'stored' : 'no'));
+      const recreated = existsSync(join(f.dataDir, 'blobs', 'bl'));
+      const d1 = code(() => f.store.deleteDocument(f.owner, f.caseId, f.first));
+      const d2 = code(() => f.store.deleteDocument(f.owner, f.caseId, f.first));
+      console.log(JSON.stringify({ probe: 'upload-then-delete', kind, upload, shardRecreated: recreated, delete1: d1, delete2: d2, ciphertextIntactElsewhere: gone.intact() }));
+      expect([d1, d2]).not.toContain('ok:true');
+    } finally { f.done(); }
+  });
+
+  it(`SAFE ${kind} lost, one upload, then reconcile: intact document must not be marked lost`, () => {
+    const f = fixture(); const gone = lose(f, kind);
+    try {
+      code(() => f.add('FICTIONAL-DURING-OUTAGE'));
+      const r = code(() => JSON.stringify(f.store.reconcile()));
+      const status = f.store.getDocument(f.owner, f.caseId, f.first)?.status;
+      console.log(JSON.stringify({ probe: 'upload-then-reconcile', kind, reconcile: r, firstDocumentStatus: status, ciphertextIntactElsewhere: gone.intact() }));
+      expect(status).toBe('ready');
+    } finally { f.done(); }
+  });
+}
+
+it('SAFE API: with the shard moved away, an upload then two DELETE requests must not report success', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'psc-claude-shard-api-'));
+  const dataDir = join(root, 'private');
+  const auth = createAuth({ databasePath: join(root, 'a.sqlite'), sessionSecret: 'fictional-test-session-secret-32-bytes!!' });
+  const store = createPrivateStore({ db: auth.accountStore.db, keys: loadPrivateKeys(join(root, 'k'), { allowCreate: true }), dataDir });
+  const app = createApp({ hasApiKey: false, readApiKey: () => null, fetchImpl: (async () => { throw new Error('no provider'); }) as never,
+    registry: new AttemptRegistry({ clock: { now: () => Date.now() }, tokenTtlMs: 60000 }), clock: { now: () => Date.now() },
+    auth, privateDocuments: { router: createPrivateRouter({ auth, store }) }, privateReady: () => true });
+  try {
+    const agent = request.agent(app); const H = '127.0.0.1:3001';
+    const send = (m: 'post' | 'delete', p: string, t: string) => agent[m](p).set('Host', H).set('Origin', LOCAL_ORIGINS[0]).set('x-csrf-token', t);
+    const boot = await agent.get('/api/auth/csrf').set('Host', H);
+    const creds = { email: 'api@example.test', password: 'correct horse battery staple' };
+    await send('post', '/api/auth/register', boot.body.csrfToken).send(creds);
+    const token = (await send('post', '/api/auth/login', boot.body.csrfToken).send(creds)).body.csrfToken as string;
+    const caseId = (await send('post', '/api/cases', token).send({ label: 'Fictional' })).body.case.id as string;
+    const pdf = await PDFDocument.create(); pdf.addPage(); const bytes = Buffer.from(await pdf.save());
+    const upload = () => send('post', `/api/cases/${caseId}/documents`, token).attach('file', bytes, 'f.pdf');
+    const first = (await upload()).body.document.id as string;
+    const blob = files(join(dataDir, 'blobs'))[0]!; const digest = sha(blob);
+    renameSync(join(dataDir, 'blobs', 'bl'), join(root, 'moved-away'));
+    const during = (await upload()).status;
+    const url = `/api/cases/${caseId}/documents/${first}`;
+    const d1 = (await send('delete', url, token).send({ confirm: true })).status;
+    const d2 = (await send('delete', url, token).send({ confirm: true })).status;
+    const listed = (await agent.get(`/api/cases/${caseId}/documents`).set('Host', H)).body.documents.some((d: { id: string }) => d.id === first);
+    const intact = files(join(root, 'moved-away')).some((p) => sha(p) === digest);
+    console.log(JSON.stringify({ probe: 'api', uploadDuringOutage: during, delete1: d1, delete2: d2, firstStillListed: listed, ciphertextIntactElsewhere: intact }));
+    expect([d1, d2]).not.toContain(204);
+  } finally { auth.close(); rmSync(root, { recursive: true, force: true }); }
+});
+
+====================================================================================================
+PROBE SOURCE claude-review/shutdown.mjs
+====================================================================================================
+// Claude probe: real main.ts. Move the blob shard away, then run its SIGINT handler. Fictional disposable runtime.
+// Windows cannot deliver SIGINT to a child, so a preload emits the event inside the process.
+import { spawn } from 'node:child_process';
+import { mkdtempSync, renameSync, writeFileSync, existsSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import http from 'node:http';
+
+const HOST = '127.0.0.1:3001'; const ORIGIN = 'http://127.0.0.1:5173'; const PORT = 3919;
+async function run(moveShard) {
+  const runtime = mkdtempSync(join(tmpdir(), 'psc-claude-shutdown-'));
+  const preload = join(runtime, 'emit.mjs');
+  writeFileSync(preload, "process.stdin.once('data', () => { process.stdin.pause(); process.emit('SIGINT'); });\n");
+  const env = { ...process.env, PSC_RUNTIME_DIR: runtime, PSC_E2E_NO_KEY: '1', PSC_E2E_AUTH_RELAXED: '1', PORT: String(PORT) };
+  delete env.PSC_PRIVATE_DATA_DIR; delete env.PSC_PRIVATE_KEY_DIR; delete env.NODE_ENV;
+  const child = spawn(process.execPath, ['--import', 'tsx', '--import', pathToFileURL(preload).href, 'apps/server/src/main.ts'], { env });
+  let stderr = ''; child.stderr.on('data', (d) => (stderr += d)); child.stdout.resume();
+  const exited = new Promise((r) => child.on('exit', (code) => r(code)));
+  let cookie = '';
+  const call = (method, path, headers = {}, body) => new Promise((resolve, reject) => {
+    const req = http.request({ host: '127.0.0.1', port: PORT, method, path, headers: { Host: HOST, cookie, ...headers } }, (res) => {
+      let text = ''; res.on('data', (d) => (text += d));
+      res.on('end', () => { const c = res.headers['set-cookie']; if (c) cookie = c[0].split(';')[0]; resolve({ status: res.statusCode, text }); });
+    });
+    req.on('error', reject); req.end(body);
+  });
+  for (let i = 0; i < 100; i++) { try { await call('GET', '/api/health'); break; } catch { await new Promise((r) => setTimeout(r, 200)); } }
+  let token = JSON.parse((await call('GET', '/api/auth/csrf')).text).csrfToken;
+  const json = (path, obj) => call('POST', path, { Origin: ORIGIN, 'x-csrf-token': token, 'content-type': 'application/json' }, JSON.stringify(obj));
+  const creds = { email: 'stop@example.test', password: 'correct horse battery staple' };
+  await json('/api/auth/register', creds);
+  token = JSON.parse((await json('/api/auth/login', creds)).text).csrfToken;
+  const caseId = JSON.parse((await json('/api/cases', { label: 'Fictional' })).text).case.id;
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64');
+  const B = 'XFICTIONAL';
+  const body = Buffer.concat([Buffer.from(`--${B}\r\nContent-Disposition: form-data; name="file"; filename="f.png"\r\nContent-Type: image/png\r\n\r\n`), png, Buffer.from(`\r\n--${B}--\r\n`)]);
+  const up = await call('POST', `/api/cases/${caseId}/documents`, { Origin: ORIGIN, 'x-csrf-token': token, 'content-type': `multipart/form-data; boundary=${B}`, 'content-length': body.length }, body);
+  const shard = join(runtime, 'private', 'blobs', 'bl');
+  const hadShard = existsSync(shard);
+  if (moveShard) renameSync(shard, join(runtime, 'shard-away'));
+  child.stdin.write('stop\n');
+  const code = await Promise.race([exited, new Promise((r) => setTimeout(() => r('still-running'), 15000))]);
+  if (code === 'still-running') child.kill();
+  const lines = stderr.split('\n');
+  console.log(JSON.stringify({ shardMovedBeforeStop: moveShard, uploadStatus: up.status, hadShard, exitCode: code,
+    privateStorageErrorInStderr: /PrivateStorageError/.test(stderr), stackFrames: lines.filter((l) => /^\s+at /.test(l)).length,
+    framesWithAbsolutePaths: lines.filter((l) => /^\s+at .*(file:\/\/\/|[A-Z]:\\)/.test(l)).length }));
+}
+await run(false);
+await run(true);
+process.exit(0);
+
+====================================================================================================
+PROBE SOURCE claude-review/ui.probe.test.tsx
+====================================================================================================
+/** Claude review probes. Fictional data, controlled client. "SAFE" tests assert expected behaviour. */
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, render, screen, waitFor, act } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import CasesPage from '../apps/web/src/cases/CasesPage';
+import { CasesRequestError, type CasesClient, type PrivateCase, type PrivateDocument } from '../apps/web/src/cases/casesClient';
+
+const A = { id: 'usr_a', email: 'account-a@example.test' };
+const B = { id: 'usr_b', email: 'account-b@example.test' };
+const mk = (id: string, label: string): PrivateCase => ({ id, label, jurisdiction: null, status: 'ready', createdAt: 1, updatedAt: 1 });
+const ONE = mk('case_one', 'Alpha fictional');
+const TWO = mk('case_two', 'Beta fictional');
+const DOC: PrivateDocument = { id: 'doc_a', caseId: ONE.id, originalName: 'fictional-secret.pdf', mimeType: 'application/pdf', size: 4, sha256: 'x', status: 'ready', createdAt: 1 };
+
+function defer<T>() {
+  let resolve!: (v: T) => void, reject!: (e: unknown) => void;
+  const promise = new Promise<T>((a, b) => { resolve = a; reject = b; });
+  return { promise, resolve, reject };
+}
+function setup(over: Partial<CasesClient> = {}) {
+  const state = { me: A as typeof A | null, listOwner: A.id, listError: null as unknown };
+  const client: CasesClient = {
+    csrf: vi.fn(async () => 'csrf'),
+    me: vi.fn(async () => state.me),
+    // The HEAD page refreshes through listCases(), so the injected failure must apply to both paths.
+    listCases: vi.fn(async () => {
+      if (state.listError) throw state.listError;
+      return [ONE, TWO];
+    }),
+    listCasesWithProvenance: vi.fn(async () => {
+      if (state.listError) throw state.listError;
+      return { accountId: state.listOwner, cases: [ONE, TWO] };
+    }),
+    createCase: vi.fn(async () => ONE),
+    updateCase: vi.fn(async () => ONE),
+    deleteCase: vi.fn(async () => undefined),
+    listDocuments: vi.fn(async (id: string) => (id === ONE.id ? [DOC] : [])),
+    uploadDocument: vi.fn(async () => DOC),
+    downloadDocument: vi.fn(async () => ({ blob: new Blob(['x']), filename: 'x.pdf' })),
+    deleteDocument: vi.fn(async () => undefined),
+    ...over,
+  };
+  return { client, state, user: userEvent.setup() };
+}
+type U = ReturnType<typeof userEvent.setup>;
+async function openOne(user: U) {
+  await user.click(await screen.findByRole('button', { name: /^Alpha fictional/ }));
+  await screen.findByText(/fictional-secret\.pdf/);
+}
+async function startUpload(user: U) {
+  await user.upload(screen.getByLabelText(/upload a pdf/i), new File(['%PDF'], 'f.pdf', { type: 'application/pdf' }));
+  await user.click(screen.getByRole('button', { name: /upload encrypted document/i }));
+}
+const snapshot = (client: CasesClient) => ({
+  stillShowsA: screen.queryByText(A.email) !== null,
+  stillShowsCaseList: screen.queryByRole('button', { name: /^Beta fictional/ }) !== null,
+  meCalls: (client.me as ReturnType<typeof vi.fn>).mock.calls.length,
+  alerts: screen.queryAllByRole('alert').map((n) => n.textContent),
+});
+afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+
+const losses = [
+  { status: 401, code: 'unauthenticated', next: null, name: '401 after session ended' },
+  { status: 403, code: 'forbidden', next: B, name: '403 after another account signed in' },
+  { status: 404, code: 'not-found', next: B, name: '404 after another account signed in' },
+];
+describe('SAFE: definite upload failure must still reconcile identity', () => {
+  for (const loss of losses) {
+    for (const switchCase of [false, true]) {
+      it(`${switchCase ? 'case switched' : 'CONTROL same case'}: ${loss.name}`, async () => {
+        const pending = defer<PrivateDocument>();
+        const { client, state, user } = setup({ uploadDocument: vi.fn(() => pending.promise) });
+        render(<CasesPage client={client} />);
+        await openOne(user);
+        await startUpload(user);
+        if (switchCase) {
+          await user.click(screen.getByRole('button', { name: /^Beta fictional/ }));
+          await screen.findByRole('heading', { name: /Case: Beta fictional/ });
+        }
+        state.me = loss.next;
+        await act(async () => { pending.reject(new CasesRequestError(loss.status, loss.code)); });
+        await new Promise((r) => setTimeout(r, 30));
+        console.log(JSON.stringify({ status: loss.status, switchCase, ...snapshot(client) }));
+        expect(screen.queryByText(A.email)).toBeNull();
+      });
+    }
+  }
+});
+
+describe('CHARACTERIZE: a successful write whose refresh proves another account', () => {
+  it('upload then list owned by B', async () => {
+    const { client, state, user } = setup();
+    render(<CasesPage client={client} />);
+    await openOne(user);
+    state.listOwner = B.id; state.me = B;
+    await startUpload(user);
+    await screen.findByText(/could not be verified/);
+    console.log(JSON.stringify({ probe: 'upload-mismatch', ...snapshot(client), docStillShown: screen.queryByText(/fictional-secret/) !== null }));
+  });
+  it('document delete then list owned by B', async () => {
+    const { client, state, user } = setup();
+    render(<CasesPage client={client} />);
+    await openOne(user);
+    state.listOwner = B.id; state.me = B;
+    await user.click(screen.getByRole('button', { name: /^delete document$/i }));
+    await user.click(screen.getByRole('button', { name: /confirm delete document/i }));
+    await screen.findByText(/could not be verified/);
+    console.log(JSON.stringify({ probe: 'delete-document-mismatch', ...snapshot(client), deletedDocStillListed: screen.queryByText(/fictional-secret/) !== null }));
+  });
+});
+
+describe('SAFE: a confirmed write must not be reported as failed when only the refresh fails', () => {
+  const failures = [new CasesRequestError(503, 'unavailable'), new CasesRequestError(0, 'timeout')];
+  for (const failure of failures) {
+    for (const op of ['edit', 'delete-case', 'delete-document'] as const) {
+      it(`${op}, refresh ${failure.status}`, async () => {
+        const { client, state, user } = setup();
+        render(<CasesPage client={client} />);
+        await openOne(user);
+        state.listError = failure;
+        if (op === 'edit') {
+          await user.click(screen.getByRole('button', { name: /save case details/i }));
+        } else if (op === 'delete-case') {
+          await user.click(screen.getByRole('button', { name: /^delete case$/i }));
+          await user.click(screen.getByRole('button', { name: /confirm delete case/i }));
+        } else {
+          await user.click(screen.getByRole('button', { name: /^delete document$/i }));
+          await user.click(screen.getByRole('button', { name: /confirm delete document/i }));
+        }
+        await waitFor(() => expect(screen.queryAllByRole('alert').length).toBeGreaterThan(0));
+        await new Promise((r) => setTimeout(r, 30));
+        const text = screen.getByRole('alert').textContent ?? '';
+        console.log(JSON.stringify({ op, refresh: failure.status, message: text, deletedCaseStillOpen: screen.queryByRole('heading', { name: /Case: Alpha/ }) !== null }));
+        expect(text).toMatch(/was (saved|deleted)|uncertain/i);
+      });
+    }
+  }
+});
+
+====================================================================================================
+PROBE SOURCE claude-review/vitest.config.ts
+====================================================================================================
+import { defineConfig } from 'vitest/config';
+export default defineConfig({ esbuild: { jsx: 'automatic' }, test: {
+  include: ['claude-review/*.probe.test.ts', 'claude-review/*.probe.test.tsx'],
+  environment: 'node', environmentMatchGlobs: [['claude-review/*.test.tsx', 'jsdom']],
+  setupFiles: ['tests/setup.ts'], restoreMocks: true, testTimeout: 15000 } });
+
+====================================================================================================
+DRIVER build_copy.py
+====================================================================================================
+"""Disposable review copy: git archive HEAD + manifest files + independent tests. No .env, no runtime."""
+import io, json, os, shutil, subprocess, sys, tarfile
+repo = os.getcwd()
+dst = sys.argv[1]
+os.makedirs(dst, exist_ok=False)
+# Planning research documents exceed the Windows path limit and no test reads them.
+tar = subprocess.check_output(['git', 'archive', 'HEAD', '--', '.', ':(exclude)_bmad-output/planning-artifacts'])
+tarfile.open(fileobj=io.BytesIO(tar)).extractall(dst)
+for e in json.load(open('docs/evidence/E1-S2-cr5r1-source-manifest-2026-11-25.json', encoding='utf-8-sig')):
+    target = os.path.join(dst, e['Path'])
+    os.makedirs(os.path.dirname(target), exist_ok=True)
+    shutil.copyfile(e['Path'], target)
+shutil.copytree('tests/independent', os.path.join(dst, 'tests/independent'), dirs_exist_ok=True)
+legacy = os.path.join(dst, '.setup/legacy-source/apps/server/src/private')
+os.makedirs(legacy)
+for f in ['privateStore.ts', 'crypto.ts']:
+    open(os.path.join(legacy, f), 'wb').write(subprocess.check_output(['git', 'show', '3600dd6:apps/server/src/private/' + f]))
+for f in ['codex-auth-cookie-race.spec.ts', 'codex-auth-independent.test.tsx', 'codex-foundation-independent.test.tsx',
+          'codex-mira-independent.test.tsx', 'codex-mira-sdk-contract.test.ts', 'codex-private-independent.test.ts',
+          'playwright.codex-auth-race.config.ts', 'vitest.codex-auth.config.ts', 'vitest.codex-foundation.config.ts',
+          'vitest.codex-private.config.ts', 'vitest.codex-review.config.ts', 'vitest.codex-sdk-contract.config.ts']:
+    shutil.copyfile(os.path.join('.setup', f), os.path.join(dst, '.setup', f))
+print('.env present:', os.path.exists(os.path.join(dst, '.env')), '| runtime present:', os.path.exists(os.path.join(dst, 'runtime')))
+
+====================================================================================================
+DRIVER verify_manifest.py
+====================================================================================================
+import json, hashlib, subprocess, sys, os
+root = sys.argv[1] if len(sys.argv) > 1 else '.'
+manifest = 'docs/evidence/E1-S2-cr5r1-source-manifest-2026-11-25.json'
+raw = open(manifest, 'rb').read()
+m = json.loads(raw.decode('utf-8-sig'))
+bad = [e['Path'] for e in m
+       if hashlib.sha256(open(os.path.join(root, e['Path']), 'rb').read()).hexdigest().upper() != e['Hash'].upper()]
+print('manifest sha256', hashlib.sha256(raw).hexdigest().upper())
+print(len(m), 'entries; mismatches against', 'working tree' if root == '.' else 'copy', bad)
+if root == '.':
+    paths = {e['Path'].replace(chr(92), '/') for e in m}
+    run = lambda *a: set(subprocess.check_output(['git', *a], text=True, stderr=subprocess.DEVNULL).split('\n')) - {''}
+    tracked = run('diff', '--name-only', 'HEAD')
+    untracked = {x for x in run('ls-files', '--others', '--exclude-standard', 'apps', 'scripts', 'tests') if not x.startswith('tests/independent/')}
+    print('modified not in manifest', sorted(tracked - paths))
+    print('untracked app/script/test not in manifest', sorted(untracked - paths))
+    print('manifest entries not modified/untracked', sorted(paths - tracked - untracked))
+
+====================================================================================================
+DRIVER mutate2.py
+====================================================================================================
+"""Revert one control at a time in the disposable copy, run the maintained suite, restore. Usage: mutate2.py <copy>"""
+import hashlib, json, os, re, subprocess, sys
+
+root = os.path.abspath(sys.argv[1])
+if not root.replace(os.sep, '/').endswith('scratchpad/r2/c/ProjectSecondChance'):
+    raise SystemExit('refusing to mutate anything except the disposable review copy')
+only = sys.argv[2:]
+
+P = 'apps/web/src/cases/CasesPage.tsx'
+R = 'apps/server/src/private/privateRoutes.ts'
+S = 'apps/server/src/private/privateStore.ts'
+W = 'apps/server/src/private/pdfValidation.ts'
+U = 'apps/server/src/private/uploadValidation.ts'
+AU = 'apps/server/src/auth/auth.ts'
+AC = 'apps/server/src/auth/authConfig.ts'
+PC = 'apps/server/src/private/privateConfig.ts'
+
+def read(p):
+    return open(os.path.join(root, p), 'rb').read().decode('utf-8').replace('\r\n', '\n')
+
+def rep(s, old, new, count=1):
+    found = s.count(old)
+    assert found >= 1, 'anchor not found: ' + old[:70]
+    if count == 0:
+        return s.replace(old, new)
+    assert found == count, f'anchor found {found} times, expected {count}: {old[:70]}'
+    return s.replace(old, new)
+
+def between(s, start, end, new):
+    a = s.index(start); b = s.index(end, a)
+    return s[:a] + new + s[b:]
+
+M = []
+def mutation(group, name, fn):
+    M.append((group, name, fn))
+
+def edit(path, old, new, count=1):
+    return lambda: {path: rep(read(path), old, new, count)}
+
+def multi(path, *pairs):
+    def run():
+        s = read(path)
+        for old, new in pairs:
+            s = rep(s, old, new)
+        return {path: s}
+    return run
+
+# --- corrections ---
+mutation('fix', 'CV-1 E2E guards', lambda: {p: rep(read(p), "throw new Error('E2E mode requires PSC_RUNTIME_DIR');", '') for p in (AC, PC)})
+mutation('fix', 'CV-2 old removeManaged', lambda: {S: between(read(S), '  const removeManaged =', '  // Bind this database', """  const removeManaged = (path: string, allowMissing = false): void => {
+    if (ops.exists(path)) { ops.unlink(path); return; }
+    if (!allowMissing) throw new PrivateStorageError('unavailable');
+  };
+
+""")})
+mutation('fix', 'CV-3 /me comparison', edit(P, 'if (authoritative === null || authoritative.id !== user?.id) {', 'if (false) {'))
+mutation('fix', 'CV-3-R1/R2 provenance comparisons', multi(P,
+    ('if (responseAccountId !== null && responseAccountId !== expectedAccountId) {', 'if (false) {'),
+    ('return snapshot.accountId === expectedAccountId ? snapshot.cases : null;', 'return snapshot.cases;'),
+    ('responseAccountId !== null ? responseAccountId === authoritative.id : renderCases;', 'true;')))
+mutation('fix', 'CV-4 unexpected-error recheck', edit(R,
+    "          if (!auth.isAuthorized(req)) return auth.rejectUnauthorized(req, res);\n          return invalid(res);\n        }\n        // The window",
+    "          return invalid(res);\n        }\n        // The window"))
+mutation('fix', 'CV-5 message suppression', edit(P, '    if (options.suppressMessage) return;\n', ''))
+mutation('fix', 'CV-6 early settle', lambda: {W: between(read(W), '      // Await the exit', '    timer = setTimeout', """      void worker.terminate();
+      if (error !== null) reject(error);
+      else if (result !== undefined) resolve(result);
+      else reject(new PdfValidationError('unavailable'));
+    };
+
+""")})
+mutation('fix', 'CR-1 early return restored', edit(P, '      const sameCase = selectedRef.current === selected.id;\n',
+    '      if (selectedRef.current !== selected.id) return;\n      const sameCase = true;\n'))
+mutation('fix', 'CR-3 reload swallow removed', edit(P, '    } catch {\n      // The mutation may already have succeeded.',
+    '    } catch (error) {\n      throw error;\n      // The mutation may already have succeeded.'))
+mutation('fix', 'CR-3 case-delete swallow removed', edit(P, '      } catch {\n        nextCases = null;\n      }',
+    '      } catch (error) {\n        throw error;\n      }'))
+mutation('fix', 'CR-4 mismatch reconcile removed', edit(P, 'async function reconcileMismatchedIdentity(request: number): Promise<void> {\n',
+    'async function reconcileMismatchedIdentity(request: number): Promise<void> {\n    if (request >= 0) return;\n'))
+mutation('fix', 'CR-4 local removal of deleted document', edit(P, 'previous === null ? previous : previous.filter((item) => item.id !== document.id),', 'previous,'))
+mutation('fix', 'CR-5 reconcile uses exists() again', lambda: {S: between(read(S), '      const path = blobPath(doc.blob_name);\n      try {\n        if (!ops.lstat(dirname(path))',
+    '    }\n    return { removedStaging, removedOrphans, missingBlobs };', """      if (!ops.exists(blobPath(doc.blob_name))) {
+        db.prepare("UPDATE private_documents SET status = 'error', updated_at = ? WHERE id = ?").run(now(), doc.id);
+        missingBlobs += 1;
+      }
+""")})
+def cr5r1():
+    s = read(S)
+    s = between(s, "    try {\n      if (!ops.lstat(join(dataDir, 'blobs')).isDirectory()) {\n        throw new PrivateStorageError('unavailable');\n      }\n    } catch {\n      // A missing/unavailable root", '    for (const path of managedStagingFiles())', '')
+    s = between(s, '      try {\n        if (!ops.lstat(dirname(path)).isDirectory()) {', '      let info: Stats;\n      try {\n        info = ops.lstat(path);', '')
+    return {S: s}
+mutation('fix', 'CR-5-R1 reconcile root+shard checks', cr5r1)
+mutation('fix', 'CR-5 startup root guard', edit(S, '  if (documentRowCount > 0) {\n', '  if (documentRowCount < 0) {\n'))
+mutation('fix', 'CR-5 delete parent check', lambda: {S: between(read(S), '    const parent = dirname(path);\n', '    const exists = ops.exists(path);', '')})
+mutation('fix', 'CR-6 guard before missing-file branch', edit(R, "        if (ownerId === null) return notFound(res);\n        if (res.headersSent || res.destroyed) return;\n", "        if (ownerId === null) return notFound(res);\n"))
+mutation('fix', 'CR-6 guard in validation catch', edit(R, "          if (res.headersSent || res.destroyed) return;\n          if (error instanceof UploadValidationError) {", "          if (error instanceof UploadValidationError) {"))
+mutation('fix', 'CR-6 error middleware passes to Express', edit(R, "      if (res.headersSent || res.destroyed) {\n        return;\n      }", "      if (res.headersSent) {\n        next(error);\n        return;\n      }"))
+
+# --- original caee540 controls, checked against the current tree ---
+def snapshot_auth():
+    return {AU: between(read(AU), '  function isAuthorized(req: Request): boolean {', '  /**\n   * Answer 401 part-way', """  function isAuthorized(req: Request): boolean {
+    if (!req.isAuthenticated() || req.user === undefined) return false;
+    const createdAt = req.session.createdAt;
+    return typeof createdAt === 'number' && now() - createdAt <= absoluteTtlMs;
+  }
+
+""")}
+mutation('caee540', 'stored-session recheck', snapshot_auth)
+mutation('caee540', 'drop dead session before late 401', edit(AU, '    if (exists) reply();\n    else req.session.destroy(reply);', '    reply();'))
+mutation('caee540', 'no publication after 408/disconnect', edit(R, "        // now would save a document the caller was told did not upload.\n        if (res.headersSent || res.destroyed) return;\n", "        // now would save a document the caller was told did not upload.\n"))
+mutation('caee540', 'cleanup does not follow links', multi(S,
+    ('return lstatSync(path).isFile();', 'return statSync(path).isFile();'),
+    ('return lstatSync(path).isDirectory();', 'return statSync(path).isDirectory();'),
+    ('  lstatSync,\n', '  lstatSync,\n  statSync,\n')))
+mutation('caee540', 'cleanup keeps unmanaged names', multi(S,
+    ('(name) => STAGING_PATTERN.test(name))', '() => true)'),
+    ("(name) => name.endsWith('.psc') && BLOB_PATTERN.test(name.slice(0, -4)),", '() => true,')))
+mutation('caee540', 'data without key check fails closed', edit(S, 'if (rows.n > 0 || managedBlobFiles().length > 0) {', 'if (rows.n < 0) {'))
+mutation('caee540', 'parent-case state blocks download', edit(S, "    if (caseRow(ownerId, caseId)?.status !== 'ready') throw new PrivateStorageError('not-found');\n", ''))
+mutation('caee540', 'pending hidden from list and detail', multi(S,
+    ("AND status != 'pending' ORDER BY created_at DESC", 'ORDER BY created_at DESC'),
+    ("if (row === undefined || row.status === 'pending') return null;", 'if (row === undefined) return null;')))
+mutation('caee540', 'truncated image rejection', edit(U, "      if (!complete(input.buffer)) throw new UploadValidationError('invalid');\n", ''))
+mutation('caee540', 'extension must match content', edit(U, 'if (!allowed.suffixes.some((suffix) => lowerName.endsWith(suffix))) {', 'if (lowerName.length < 0) {'))
+mutation('caee540', 'direction-override rejection', lambda: {U: re.sub(r"if \(/\[\\u200e[^\n]*\.test\(name\)\) \{", 'if (name.length < 0) {', read(U), count=1)})
+mutation('caee540', 'C1 control rejection', edit(U, 'u007f-' + chr(92) + 'u009f]', 'u007f]'))
+mutation('caee540', 'UTF-8 filenames', edit(R, "    defParamCharset: 'utf8',\n", ''))
+mutation('caee540', 'ownership before body parsing', edit(R, '    requireOwnedCase,\n    limitConcurrentUploads,', '    limitConcurrentUploads,'))
+mutation('caee540', 'no-store on private JSON', edit(R, "  router.use('/api/cases', (_req, res, next) => {\n    res.setHeader('Cache-Control', 'no-store');\n", "  router.use('/api/cases', (_req, _res, next) => {\n"))
+mutation('caee540', 'malformed multipart is 400', edit(R, "next(error instanceof multer.MulterError ? error : new UploadValidationError('invalid'));", 'next(error);'))
+mutation('caee540', 'UI edit fields reset on switch', edit(P, "    setEditLabel(item?.label ?? '');\n    setEditJurisdiction(item?.jurisdiction ?? '');\n", "    if (item !== null && editLabel === '') { setEditLabel(item.label); setEditJurisdiction(item.jurisdiction ?? ''); }\n"))
+mutation('caee540', 'UI stale document list ignored', edit(P, '      if (selectedRef.current === item.id) setDocuments(nextDocuments);\n', '      setDocuments(nextDocuments);\n'))
+mutation('caee540', 'UI file choice cleared on switch', edit(P, "    setFile(null);\n    setFileInputVersion((version) => version + 1);\n    setConfirmCase(false);", '    setConfirmCase(false);'))
+mutation('caee540', 'UI changed identity ends session', edit(P, '        if (currentUser === null || currentUser.id !== user?.id) {', '        if (currentUser === null) {'))
+mutation('caee540', 'UI download disabled for non-ready case', edit(P, "busy !== null || document.status !== 'ready' || selected.status !== 'ready'", "busy !== null || document.status !== 'ready'"))
+mutation('caee540', 'UI refresh after failed delete', edit(P, '      await showServerState(current);\n    } finally {', '    } finally {', 0))
+mutation('caee540', 'UI incomplete-deletion label', edit(P, "{item.status === 'ready' ? '' : ' (unavailable or deletion incomplete)'}", ''))
+
+if only == ['dry']:
+    problems = 0
+    for group, name, fn in M:
+        try:
+            for p, text in fn().items():
+                assert text.encode() != open(os.path.join(root, p), 'rb').read().replace(b'\r\n', b'\n'), 'changes nothing'
+        except Exception as error:
+            problems += 1
+            print(f'[{group}] {name}: {error}')
+    print(len(M), 'mutations;', problems, 'anchor problems')
+    raise SystemExit(0)
+
+for group, name, fn in M:
+    if only and group not in only:
+        continue
+    try:
+        changes = fn()
+    except Exception as error:
+        print(f'[{group}] {name}: ANCHOR PROBLEM {error}', flush=True)
+        continue
+    original = {p: open(os.path.join(root, p), 'rb').read() for p in changes}
+    try:
+        for p, text in changes.items():
+            assert text.encode() != original[p].replace(b'\r\n', b'\n'), 'mutation changed nothing: ' + name
+            open(os.path.join(root, p), 'wb').write(text.encode('utf-8'))
+        run = subprocess.run('npx vitest run', cwd=root, shell=True, capture_output=True, text=True, encoding='utf-8',
+                             errors='replace', env={**os.environ, 'NO_COLOR': '1'})
+        out = re.sub(r'\x1b\[[0-9;]*m', '', run.stdout + run.stderr)
+        totals = re.findall(r'^ +Tests +(.*)$', out, re.M)
+        failed = sorted(set(re.findall(r'^ FAIL +(.*)$', out, re.M)))
+        verdict = 'DETECTED' if run.returncode != 0 else 'SURVIVED'
+        print(f'[{group}] {name}: {verdict} exit {run.returncode}; {totals[-1] if totals else "no totals"}', flush=True)
+        for line in failed[:2]:
+            print('      ', line[:170], flush=True)
+    finally:
+        for p, data in original.items():
+            open(os.path.join(root, p), 'wb').write(data)
+
+manifest = json.load(open(os.environ['PSC_REVIEW_MANIFEST'], encoding='utf-8-sig'))
+bad = [e['Path'] for e in manifest if hashlib.sha256(open(os.path.join(root, e['Path']), 'rb').read()).hexdigest().upper() != e['Hash']]
+auth_ok = subprocess.run('git hash-object --stdin', shell=True, input=open(os.path.join(root, AU), 'rb').read(), capture_output=True).returncode == 0
+print('MUTATIONS COMPLETE; copy manifest mismatches:', bad)
+
+====================================================================================================
+DRIVER followup.py
+====================================================================================================
+"""Two follow-ups in the disposable copy only. Every changed file is restored byte for byte.
+ 1. Is the maintained 'removes a confirmed deleted document' assertion able to fail?
+ 2. Revert all three CR-6 response guards together (each survived on its own)."""
+import hashlib, json, os, re, subprocess, sys
+
+root = os.path.abspath(sys.argv[1])
+if not root.replace(os.sep, '/').endswith('scratchpad/r2/c/ProjectSecondChance'):
+    raise SystemExit('refusing to touch anything except the disposable review copy')
+P = 'apps/web/src/cases/CasesPage.tsx'
+T = 'apps/web/src/cases/CasesPage.test.tsx'
+R = 'apps/server/src/private/privateRoutes.ts'
+
+def raw(p):
+    return open(os.path.join(root, p), 'rb').read()
+
+def lf(p):
+    return raw(p).decode('utf-8').replace('\r\n', '\n')
+
+def swap(s, old, new):
+    assert s.count(old) == 1, f'anchor found {s.count(old)} times: {old[:70]}'
+    return s.replace(old, new)
+
+def run(args):
+    r = subprocess.run(args, cwd=root, shell=True, capture_output=True, text=True, encoding='utf-8', errors='replace',
+                       env={**os.environ, 'NO_COLOR': '1'}, timeout=420)
+    return r.returncode, re.sub(r'\x1b\[[0-9;]*m', '', r.stdout + r.stderr)
+
+def with_changes(changes, args):
+    saved = {p: raw(p) for p in changes}
+    try:
+        for p, text in changes.items():
+            open(os.path.join(root, p), 'wb').write(text.encode('utf-8'))
+        return run(args)
+    finally:
+        for p, data in saved.items():
+            open(os.path.join(root, p), 'wb').write(data)
+
+def totals(out):
+    found = re.findall(r'^ +Tests +(.*)$', out, re.M)
+    return found[-1] if found else 'no totals'
+
+no_removal = swap(lf(P), 'previous === null ? previous : previous.filter((item) => item.id !== document.id),', 'previous,')
+strict_test = swap(lf(T), 'expect(screen.queryByText(DOC.originalName)).not.toBeInTheDocument();',
+                   'expect(screen.queryByText(/fictional\\.pdf/)).not.toBeInTheDocument();')
+name = 'removes a confirmed deleted document even when'
+cmd = f'npx vitest run {T} -t "{name}"'
+print('== 1. maintained assertion strength (test line 435)')
+for label, changes in [
+    ('shipped assertion, removal code removed ', {P: no_removal}),
+    ('pattern assertion, shipped source       ', {T: strict_test}),
+    ('pattern assertion, removal code removed ', {T: strict_test, P: no_removal}),
+]:
+    code, out = with_changes(changes, cmd)
+    print(f'   {label}: exit {code}; {totals(out)}', flush=True)
+
+routes = lf(R)
+routes = swap(routes, "        if (ownerId === null) return notFound(res);\n        if (res.headersSent || res.destroyed) return;\n",
+              "        if (ownerId === null) return notFound(res);\n")
+routes = swap(routes, "          if (res.headersSent || res.destroyed) return;\n          if (error instanceof UploadValidationError) {",
+              "          if (error instanceof UploadValidationError) {")
+routes = swap(routes, "      if (res.headersSent || res.destroyed) {\n        return;\n      }",
+              "      if (res.headersSent) {\n        next(error);\n        return;\n      }")
+print('== 2. all three CR-6 guards removed together')
+code, out = with_changes({R: routes}, 'npx vitest run')
+print(f'   maintained suite: exit {code}; {totals(out)}')
+for line in sorted(set(re.findall(r'^ FAIL +(.*)$', out, re.M)))[:4]:
+    print('     ', line[:170])
+for label, changes in [('guards removed', {R: routes}), ('guards restored', {})]:
+    code, out = with_changes(changes, 'node --import tsx claude-review/late408.mjs')
+    keep = [l for l in out.split('\n') if l.strip() and not re.match(r'\s+at ', l)]
+    frames = sum(1 for l in out.split('\n') if re.match(r'\s+at ', l))
+    print(f'   late408 probe, {label}: exit {code}; stack frame lines {frames}; header errors {len(re.findall("ERR_HTTP_HEADERS_SENT", out))}')
+    for l in keep[:12]:
+        print('     ', re.sub(r'[A-Za-z]:[\\/]+Users[\\/]+[^\\/]+', '<local-user>', l)[:200])
+
+manifest = json.load(open(os.environ['PSC_REVIEW_MANIFEST'], encoding='utf-8-sig'))
+bad = [e['Path'] for e in manifest if hashlib.sha256(raw(e['Path'])).hexdigest().upper() != e['Hash']]
+print('copy manifest mismatches after follow-ups:', bad)
+
+====================================================================================================
+DRIVER history.py
+====================================================================================================
+"""Compare test totals recorded in earlier-cycle sections across three versions of each living document."""
+import hashlib, json, re, subprocess, sys
+old_root = sys.argv[1]
+man = {e['Path']: e['Hash'] for e in json.load(open('docs/evidence/E1-S2-cv3-r2-source-manifest-2026-11-25.json', encoding='utf-8-sig'))}
+docs = ['docs/evidence/E1-S2-builder.md', 'docs/planning/RISK_REGISTER.md']
+count = re.compile(r'\b(347|348|374|376|213|225|227)\b')
+
+def sections(text):
+    current, out = '(top)', {}
+    for line in text.replace('\r\n', '\n').split('\n'):
+        if line.startswith('## '):
+            current = line[3:].strip()
+        found = count.findall(line)
+        if found:
+            out.setdefault(current, []).extend(found)
+    return {k: sorted(set(v)) for k, v in out.items()}
+
+for d in docs:
+    old = open(f'{old_root}/{d}', 'rb').read()
+    print('==', d, '| earlier copy matches the CV3-R2 manifest hash:', hashlib.sha256(old).hexdigest().upper() == man[d])
+    versions = {
+        'committed HEAD': sections(subprocess.check_output(['git', 'show', 'HEAD:' + d]).decode('utf-8')),
+        'CV3-R2 tree': sections(old.decode('utf-8')),
+        'current': sections(open(d, encoding='utf-8').read()),
+    }
+    names = []
+    for v in versions.values():
+        names += [n for n in v if n not in names]
+    for n in names:
+        row = ' | '.join(f'{label}: {",".join(v.get(n, [])) or "-"}' for label, v in versions.items())
+        print(f'  [{n[:70]}]\n      {row}')
+
+====================================================================================================
+DRIVER exposure.py
+====================================================================================================
+"""Read-only publication checks on local Git objects. Prints file names and counts only, never matched values."""
+import glob, json, os, re, subprocess
+
+def git(*a):
+    return subprocess.run(['git', *a], capture_output=True, text=True, encoding='utf-8', errors='replace').stdout
+
+sep = '[' + chr(92) * 2 + '/]'          # regex class matching backslash or slash
+user = os.path.basename(os.path.expanduser('~'))
+pattern = '[A-Za-z]:' + sep + '+Users' + sep + '+' + re.escape(user)
+rx = re.compile(pattern, re.I)
+
+def tree_hits(ref):
+    names = git('ls-tree', '-r', '--name-only', ref).split('\n')
+    out = []
+    for n in filter(None, names):
+        if rx.search(git('show', f'{ref}:{n}')):
+            out.append(n)
+    return out
+
+published = {}
+for ref in ['origin/main', 'origin/feature/e1-s2-private-documents']:
+    published[ref] = tree_hits(ref)
+    print(ref, git('rev-parse', '--short', ref).strip(), 'commits', git('rev-list', '--count', ref).strip(), '| tracked files with owner path:', len(published[ref]))
+    for n in published[ref]:
+        print('    ', n)
+head = tree_hits('HEAD')
+print('HEAD tracked files with owner path:', len(head), '| not already on published feature:', sorted(set(head) - set(published['origin/feature/e1-s2-private-documents'])))
+
+changed = set(git('diff', '--name-only', 'HEAD').split('\n')) - {''}
+untracked = set(git('ls-files', '--others', '--exclude-standard').split('\n')) - {''}
+for label, group in [('modified tracked', changed), ('untracked, not ignored', untracked)]:
+    hits = sorted(n for n in group if os.path.isfile(n) and rx.search(open(n, encoding='utf-8', errors='replace').read()))
+    print(f'{label}: {len(group)} files, with owner path: {len(hits)}')
+    for n in hits:
+        print('    ', n)
+
+emails = [e for e in git('log', '--format=%ae%n%ce', 'origin/feature/e1-s2-private-documents', 'origin/main').split('\n') if e]
+print('published commit author/committer address entries:', len(emails), '| not a GitHub noreply address:', sum('noreply' not in e for e in emails))
+print('root license files tracked at HEAD:', [n for n in git('ls-tree', '--name-only', 'HEAD').split('\n') if re.match(r'(LICEN[SC]E|COPYING)', n, re.I)])
+
+pkg = json.load(open('package.json', encoding='utf-8'))
+print('--- production dependency license fields (installed metadata, direct only)')
+for d in pkg['dependencies']:
+    meta = json.load(open(f'node_modules/{d}/package.json', encoding='utf-8'))
+    lic = meta.get('license') or meta.get('licenses') or 'NOT DECLARED'
+    files = [os.path.basename(f) for f in glob.glob(f'node_modules/{d}/*') if re.match(r'(licen[sc]e|copying)', os.path.basename(f), re.I)]
+    print(f'    {d:24} {str(lic):28} license file: {files or "none"}')
+
+====================================================================================================
+OUTPUT advisory-dates.log
+====================================================================================================
+GHSA-5gmw-xhrv-c9v3 | critical | published 2026-10-05T22:50:01Z
+GHSA-85c8-ppgw-ccpr | critical | published 2026-10-05T22:49:52Z
+GHSA-82fw-gwwq-j7x9 | medium | published 2026-09-08T20:46:45Z
+GHSA-qxg6-89mg-rqv8 | medium | published 2026-10-21T19:54:26Z
+GHSA-7mvr-c777-76hp | high | published 2025-10-14T18:30:36Z
+GHSA-67mh-4wv8-2f99 | medium | published 2025-02-10T17:48:07Z
+
+====================================================================================================
+OUTPUT api.log
+====================================================================================================
+
+> project-second-chance@0.0.0 test:api
+> vitest run apps/server
+
+
+ RUN  v2.1.8 <SP>/r2/c/ProjectSecondChance
+
+ ✓ apps/server/src/avatar/attemptRegistry.test.ts (18 tests) 23ms
+ ✓ apps/server/src/avatar/nuanceGateway.test.ts (10 tests) 15ms
+ ✓ apps/server/src/private/crypto.test.ts (10 tests) 153ms
+ ✓ apps/server/src/routes.test.ts (20 tests) 969ms
+ ✓ apps/server/src/private/privateStore.test.ts (18 tests) 2566ms
+ ✓ apps/server/src/auth/sessionStore.test.ts (6 tests) 316ms
+ ✓ apps/server/src/health/health.routes.test.ts (4 tests) 191ms
+ ✓ apps/server/src/private/privateConfig.test.ts (4 tests) 776ms
+ ✓ apps/server/src/auth/accountStore.test.ts (7 tests) 305ms
+ ✓ apps/server/src/private/uploadValidation.test.ts (11 tests) 4004ms
+   ✓ upload validation > accepts a real one-page PDF and reports its detected type 1111ms
+   ✓ upload validation > rejects corrupt and encrypted-looking PDFs 730ms
+   ✓ upload validation > rejects non-whitespace bytes after the final PDF EOF marker but accepts trailing whitespace 968ms
+   ✓ upload validation > rejects PDFs over the page cap 1148ms
+ ✓ apps/server/src/avatar/sessionGuard.test.ts (25 tests) 21ms
+ ✓ apps/server/src/config.test.ts (8 tests) 99ms
+ ✓ apps/server/src/auth/auth.routes.test.ts (23 tests) 6638ms
+   ✓ account lifecycle > creates an account and signs in with a real session, then signs out 396ms
+   ✓ account lifecycle > uses a uniform public outcome for valid new/duplicate registration and generic validation failures 355ms
+   ✓ account lifecycle > does not replace the existing password or create a second account on valid duplicate registration 307ms
+   ✓ account lifecycle > keeps two independent fictional accounts isolated 436ms
+   ✓ session boundary > persists accounts and valid sessions across a clean app restart 673ms
+   ✓ session boundary > throttles repeated login attempts per identifier without revealing account existence 567ms
+   ✓ failure handling > supports signing in again immediately after an awaited logout without a stale cookie 377ms
+   ✓ failure handling > stops every session for a disabled account 379ms
+ ✓ apps/server/src/auth/authConfig.test.ts (4 tests) 56ms
+ ✓ apps/server/src/auth/password.test.ts (7 tests) 347ms
+ ✓ apps/server/src/private/sourceHygiene.test.ts (1 test) 83ms
+ ✓ apps/server/src/private/workerLifecycle.test.ts (2 tests) 824ms
+   ✓ configures the live worker with the bounded parser limits 737ms
+ ✓ apps/server/src/private/isolation.test.ts (1 test) 1186ms
+   ✓ browser config neutralizes inherited private data/key overrides 1185ms
+ ✓ apps/server/src/private/privateHardening.test.ts (36 tests) 9909ms
+   ✓ authorization is rechecked before publication > does not publish when the session is logged out while the upload is pending 579ms
+   ✓ authorization is rechecked before publication > does not re-send a logged-out session cookie from the late upload response 311ms
+   ✓ authorization is rechecked before publication > does not re-send a logged-out cookie on an unexpected validation exception 344ms
+   ✓ authorization is rechecked before publication > does not re-send a logged-out cookie on a late validation failure 328ms
+   ✓ authorization is rechecked before publication > does not publish when the account is disabled while the upload is pending 493ms
+   ✓ authorization is rechecked before publication > does not publish after the upload window already answered 408 307ms
+   ✓ authorization is rechecked before publication > does not attempt a second response when validation fails after the 408 371ms
+   ✓ authorization is rechecked before publication > does not attempt a second response when logout follows a 408 and validation then fails 363ms
+   ✓ upload concurrency > limits each user to two concurrent uploads and releases slots after completion 486ms
+   ✓ upload concurrency > does not count a second account against the first account upload limit 615ms
+   ✓ upload concurrency > does not release upload work slots merely because the response timed out 356ms
+   ✓ private storage readiness > keeps health live and returns 503 for authenticated private requests when storage is unavailable 365ms
+   ✓ request boundary > checks case ownership before parsing or validating an upload 478ms
+   ✓ request boundary > marks every private JSON response no-store 401ms
+   ✓ request boundary > keeps a non-ASCII filename intact 312ms
+   ✓ upload validation > rejects a PDF whose end-of-file marker was cut off 871ms
+   ✓ reconciliation stays inside managed files > does not follow a directory junction under blobs 949ms
+ ✓ apps/server/src/private/privateRoutes.test.ts (12 tests) 10430ms
+   ✓ private cases and documents API > keeps cases/documents owner-isolated and hides foreign IDs consistently 826ms
+   ✓ private cases and documents API > creates, reads, edits, uploads, downloads and deletes an owned case/document 1723ms
+   ✓ private cases and documents API > rejects unauthenticated, missing-CSRF and foreign-Origin private mutations 388ms
+   ✓ private cases and documents API > rejects invalid, spoofed, oversize, multiple-file and traversal uploads without publishing 689ms
+   ✓ private cases and documents API > returns a generic failure without plaintext when a blob is tampered 1442ms
+   ✓ private cases and documents API > rejects expired sessions before private data access 368ms
+   ✓ private cases and documents API > does not claim deletion success when managed blob removal fails 1278ms
+   ✓ private cases and documents API > rechecks authorization at the private publication boundary 1453ms
+   ✓ private cases and documents API > fails closed on a wrong key and preserves readable data with the right key after restart 826ms
+   ✓ private cases and documents API > does not publish a successful upload when staging/write fails 634ms
+   ✓ private cases and documents API > keeps only ciphertext and encrypted metadata on disk and in the DB 514ms
+
+ Test Files  20 passed (20)
+      Tests  227 passed (227)
+   Start at  23:27:50
+   Duration  15.30s (transform 1.40s, setup 18.48s, collect 12.83s, tests 38.91s, environment 7ms, prepare 9.32s)
+
+====================================================================================================
+OUTPUT audit-production.log
+====================================================================================================
+found 0 vulnerabilities
+exit 0
+
+====================================================================================================
+OUTPUT audit.log
+====================================================================================================
+# npm audit report
+
+@vitest/mocker  <=4.1.11
+Severity: moderate
+Vitest: Path Traversal / Arbitrary File Read via @vitest/mocker Redirect Mock - https://github.com/advisories/GHSA-82fw-gwwq-j7x9
+Vitest: Code injection via unauthenticated manual mock registration - https://github.com/advisories/GHSA-qxg6-89mg-rqv8
+Depends on vulnerable versions of vite
+fix available via `npm audit fix --force`
+Will install vitest@2.1.9, which is outside the stated dependency range
+node_modules/vitest/node_modules/@vitest/mocker
+  vitest  <=4.1.10
+  Depends on vulnerable versions of @vitest/mocker
+  Depends on vulnerable versions of tinypool
+  Depends on vulnerable versions of vite
+  Depends on vulnerable versions of vite-node
+  node_modules/vitest
+
+esbuild  <=0.24.2
+Severity: moderate
+esbuild enables any website to send any requests to the development server and read the response - https://github.com/advisories/GHSA-67mh-4wv8-2f99
+fix available via `npm audit fix --force`
+Will install tsx@4.23.15, which is outside the stated dependency range
+node_modules/esbuild
+node_modules/vite-node/node_modules/esbuild
+node_modules/vite/node_modules/esbuild
+node_modules/vitest/node_modules/esbuild
+  tsx  3.13.0 - 4.19.2
+  Depends on vulnerable versions of esbuild
+  node_modules/tsx
+  vite  <=6.4.3
+  Depends on vulnerable versions of esbuild
+  node_modules/vite
+  node_modules/vite-node/node_modules/vite
+  node_modules/vitest/node_modules/vite
+    vite-node  <=2.2.0-beta.2
+    Depends on vulnerable versions of vite
+    node_modules/vite-node
+
+playwright  <1.55.1
+Severity: high
+Playwright downloads and installs browsers without verifying the authenticity of the SSL certificate - https://github.com/advisories/GHSA-7mvr-c777-76hp
+fix available via `npm audit fix --force`
+Will install @playwright/test@1.65.1, which is outside the stated dependency range
+node_modules/playwright
+  @playwright/test  0.9.7 - 0.1112.0-alpha2 || 1.38.0-alpha-1692262648000 - 1.55.1-beta-1758616458000
+  Depends on vulnerable versions of playwright
+  node_modules/@playwright/test
+
+tinypool  <=2.1.1
+Severity: critical
+Tinypool: Prototype Pollution gadget in worker options leads to Remote Code Execution - https://github.com/advisories/GHSA-5gmw-xhrv-c9v3
+Tinypool: Prototype Pollution Gadget to RCE in run() options - https://github.com/advisories/GHSA-85c8-ppgw-ccpr
+fix available via `npm audit fix --force`
+Will install vitest@2.1.9, which is outside the stated dependency range
+node_modules/tinypool
+
+
+
+9 vulnerabilities (4 moderate, 3 high, 2 critical)
+
+To address all issues, run:
+  npm audit fix --force
+
+====================================================================================================
+OUTPUT build.log
+====================================================================================================
+
+> project-second-chance@0.0.0 build
+> vite build
+
+vite v6.0.3 building for production...
+transforming...
+✓ 42 modules transformed.
+rendering chunks...
+computing gzip size...
+../../dist/web/index.html                   0.66 kB │ gzip:   0.40 kB
+../../dist/web/assets/index-BFKA00az.css    6.83 kB │ gzip:   1.57 kB
+../../dist/web/assets/sdk-C45RHlCG.js       0.76 kB │ gzip:   0.45 kB
+../../dist/web/assets/App-C1ZwlLjo.js       9.92 kB │ gzip:   3.91 kB
+../../dist/web/assets/index-QMoqshbK.js   176.52 kB │ gzip:  54.96 kB
+../../dist/web/assets/js-sdk-DglVioxy.js  664.09 kB │ gzip: 176.74 kB
+
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+✓ built in 1.63s
+
+====================================================================================================
+OUTPUT cookie-race.log
+====================================================================================================
+(node:27660) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[WebServer] (node:17620) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] [api] No usable NUANCE_API_KEY. Start will answer 503.
+[WebServer] (node:36304) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+[WebServer] (Use `node --trace-deprecation ...` to show where the warning was created)
+[WebServer] (node:36304) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (node:8888) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 1 test using 1 worker
+
+(node:24492) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:24492) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(node:24492) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+{"initialResponses":1,"tokenFromResponse":1,"cookieFromResponse":1,"status":201}
+  ok 1 [chromium] › codex-auth-cookie-race.spec.ts:3:1 › startup remains usable when an older CSRF response delivers its cookie last (1.3s)
+
+  1 passed (7.4s)
+
+====================================================================================================
+OUTPUT cvretest.log
+====================================================================================================
+
+ RUN  v2.1.8 <SP>/r2/c/ProjectSecondChance
+
+stdout | tests/independent/e1-s2-cv-retest-identity.test.tsx > CV-3 residual: a delayed list from an intermediate account must not render when the session has returned to the original account
+{"identityChecks":2,"delayedOtherAccountCaseShown":false,"originalIdentityShown":true}
+
+ ✓ tests/independent/e1-s2-cv-retest-identity.test.tsx (1 test) 286ms
+stdout | tests/independent/e1-s2-cv-retest-worker.test.ts > CV-6: native limits apply while the worker lives; result settles only after exit clears the native property
+{"liveOldHeapMiB":64,"exitedBeforeResult":true,"postExitLimitsEmpty":true}
+
+ ✓ tests/independent/e1-s2-cv-retest-worker.test.ts (2 tests) 306ms
+
+ Test Files  2 passed (2)
+      Tests  3 passed (3)
+   Start at  23:28:34
+   Duration  3.25s (transform 126ms, setup 428ms, collect 649ms, tests 592ms, environment 841ms, prepare 260ms)
+
+====================================================================================================
+OUTPUT diffcheck.log
+====================================================================================================
+warning: in the working copy of '.gitignore', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of '_bmad-output/implementation-artifacts/spec-e1-s2-private-documents.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/server/src/private/pdfValidation.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/server/src/private/privateConfig.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/server/src/private/privateHardening.test.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/server/src/private/privateRoutes.test.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/server/src/private/privateRoutes.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/server/src/private/privateStore.test.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/server/src/private/privateStore.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/web/src/cases/CasesPage.test.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/web/src/cases/CasesPage.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/web/src/cases/casesClient.test.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/web/src/cases/casesClient.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'docs/adr/0003-private-storage-and-key-management.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'docs/adr/0004-upload-validation-and-limits.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'docs/evidence/E1-S2-builder.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'scripts/check-test-isolation.mjs', LF will be replaced by CRLF the next time Git touches it
+
+====================================================================================================
+OUTPUT download-control.log
+====================================================================================================
+CONTROL_DOWNLOAD_ERROR EPERM
+
+====================================================================================================
+OUTPUT download-spec.log
+====================================================================================================
+(node:30652) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[WebServer] (node:18188) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] [api] No usable NUANCE_API_KEY. Start will answer 503.
+[WebServer] (node:19760) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+[WebServer] (Use `node --trace-deprecation ...` to show where the warning was created)
+[WebServer] (node:19760) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (node:25256) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 2 tests using 1 worker
+
+(node:28184) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:28184) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(node:28184) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  x  1 [chromium] › e1-s2-download.spec.ts:4:1 › P5/P10: actual browser UTF-8 download artifact is byte-identical (1.9s)
+(node:23800) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:23800) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(node:23800) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  x  2 [chromium-narrow] › e1-s2-download.spec.ts:4:1 › P5/P10: actual browser UTF-8 download artifact is byte-identical (2.1s)
+
+
+  1) [chromium] › e1-s2-download.spec.ts:4:1 › P5/P10: actual browser UTF-8 download artifact is byte-identical 
+
+    Error: EPERM: operation not permitted, open '<local-user>\AppData\Local\Temp\playwright-artifacts-s3sjdI\06dc97d1-2e10-46c1-9927-d4a7f6a2300f'
+
+      31 |   expect(output).not.toBeNull();
+      32 |   expect(await download.failure()).toBeNull();
+    > 33 |   expect(readFileSync(output!).equals(bytes)).toBe(true);
+         |          ^
+      34 | });
+      35 |
+        at <SP>\r2\c\ProjectSecondChance\tests\independent\e1-s2-download.spec.ts:33:10
+
+    Test timeout of 60000ms exceeded.
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\codex-independent-download\e1-s2-download-P5-P10-actu-dfeb9--artifact-is-byte-identical-chromium\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  2) [chromium-narrow] › e1-s2-download.spec.ts:4:1 › P5/P10: actual browser UTF-8 download artifact is byte-identical 
+
+    Error: EPERM: operation not permitted, open '<local-user>\AppData\Local\Temp\playwright-artifacts-mQf1Av\d5af72aa-4f4d-40c0-9135-492fe9b46300'
+
+      31 |   expect(output).not.toBeNull();
+      32 |   expect(await download.failure()).toBeNull();
+    > 33 |   expect(readFileSync(output!).equals(bytes)).toBe(true);
+         |          ^
+      34 | });
+      35 |
+        at <SP>\r2\c\ProjectSecondChance\tests\independent\e1-s2-download.spec.ts:33:10
+
+    Test timeout of 60000ms exceeded.
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\codex-independent-download\e1-s2-download-P5-P10-actu-dfeb9--artifact-is-byte-identical-chromium-narrow\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  2 failed
+    [chromium] › e1-s2-download.spec.ts:4:1 › P5/P10: actual browser UTF-8 download artifact is byte-identical 
+    [chromium-narrow] › e1-s2-download.spec.ts:4:1 › P5/P10: actual browser UTF-8 download artifact is byte-identical
+
+====================================================================================================
+OUTPUT e2e.log
+====================================================================================================
+
+> project-second-chance@0.0.0 pretest:e2e
+> node scripts/check-test-isolation.mjs
+
+E2E isolation preflight passed: browser tests use a disposable runtime, not the owner runtime.
+
+> project-second-chance@0.0.0 test:e2e
+> playwright test
+
+(node:14928) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[WebServer] (node:4992) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] [api] No usable NUANCE_API_KEY. Start will answer 503.
+[WebServer] (node:28432) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+[WebServer] (Use `node --trace-deprecation ...` to show where the warning was created)
+[WebServer] (node:28432) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (node:6056) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 56 tests using 1 worker
+
+(node:31640) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:31640) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(node:31640) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ok 1 [chromium] › auth.spec.ts:54:3 › fictional-demo accounts › creates, signs in, survives reload, signs out and leaves no credential in the URL (1.8s)
+  ok 2 [chromium] › auth.spec.ts:75:3 › fictional-demo accounts › keeps two independent browser contexts isolated (2.0s)
+  ok 3 [chromium] › auth.spec.ts:99:3 › fictional-demo accounts › rejects a logged-out session cookie replay (1.4s)
+  ok 4 [chromium] › auth.spec.ts:123:3 › fictional-demo accounts › rejects an account mutation without a CSRF token (209ms)
+  ok 5 [chromium] › auth.spec.ts:132:3 › fictional-demo accounts › keeps account pages form-operable on a narrow viewport without horizontal scrolling (614ms)
+  ok 6 [chromium] › auth.spec.ts:151:3 › fictional-demo accounts › does not contact Nuance or any external origin during account activity (1.0s)
+  ok 7 [chromium] › avatar.spec.ts:16:3 › disclosure and no media before Start › page states what it is and gives no legal advice (683ms)
+  ok 8 [chromium] › avatar.spec.ts:23:3 › disclosure and no media before Start › starts no microphone and no camera on load (495ms)
+  ok 9 [chromium] › avatar.spec.ts:46:3 › disclosure and no media before Start › links provider terms and the privacy/recording policy (494ms)
+  ok 10 [chromium] › avatar.spec.ts:60:3 › request protection › bootstrap rejects a foreign Origin and sets no permissive CORS (199ms)
+  ok 11 [chromium] › avatar.spec.ts:68:3 › request protection › token POST rejects a missing Origin (189ms)
+  ok 12 [chromium] › avatar.spec.ts:78:3 › request protection › token POST rejects a foreign Origin (196ms)
+  ok 13 [chromium] › avatar.spec.ts:87:3 › request protection › token POST rejects a missing CSRF header even with a valid origin (194ms)
+  ok 14 [chromium] › avatar.spec.ts:96:3 › request protection › GET on the token route is 405 (180ms)
+  ok 15 [chromium] › avatar.spec.ts:103:3 › request protection › a fully valid request reports the missing key as 503, never a token (178ms)
+  ok 16 [chromium] › avatar.spec.ts:114:3 › request protection › no CORS headers are emitted for a cross-origin preflight (181ms)
+  ok 17 [chromium] › avatar.spec.ts:127:3 › failure state is honest, not a fake success › Start without a key shows an unavailable state and no avatar (1.0s)
+  ok 18 [chromium] › avatar.spec.ts:137:3 › failure state is honest, not a fake success › offers a retry after the failure and stays keyboard operable (893ms)
+  ok 19 [chromium] › avatar.spec.ts:151:3 › narrow viewport › controls remain visible and operable on a phone-sized screen (524ms)
+  ok 20 [chromium] › foundation.spec.ts:12:3 › foundation landing › states the fictional boundary and links demo accounts without a landing form (455ms)
+  ok 21 [chromium] › foundation.spec.ts:33:3 › foundation landing › reports the health contract and makes only foundation API requests (412ms)
+  ok 22 [chromium] › foundation.spec.ts:55:3 › foundation landing › shows an actionable keyboard retry after API failure and recovers (663ms)
+  ok 23 [chromium] › foundation.spec.ts:87:3 › foundation landing › treats a malformed health body as unavailable (413ms)
+  ok 24 [chromium] › foundation.spec.ts:100:3 › foundation landing › is readable and operable on a phone viewport without horizontal scrolling (411ms)
+  ok 25 [chromium] › foundation.spec.ts:112:3 › foundation landing › keeps Mira as an explicit optional page (643ms)
+  ok 26 [chromium] › private-documents.spec.ts:44:3 › private cases and encrypted documents › creates a case, uploads/downloads a PDF, and performs confirmed live deletion (3.8s)
+  ok 27 [chromium] › private-documents.spec.ts:87:3 › private cases and encrypted documents › keeps two accounts and their private cases isolated (2.3s)
+  ok 28 [chromium] › private-documents.spec.ts:114:3 › private cases and encrypted documents › keeps the private case forms operable on a narrow viewport without horizontal scrolling (1.1s)
+(node:32876) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:32876) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(node:32876) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ok 29 [chromium-narrow] › auth.spec.ts:54:3 › fictional-demo accounts › creates, signs in, survives reload, signs out and leaves no credential in the URL (1.7s)
+  ok 30 [chromium-narrow] › auth.spec.ts:75:3 › fictional-demo accounts › keeps two independent browser contexts isolated (2.0s)
+  ok 31 [chromium-narrow] › auth.spec.ts:99:3 › fictional-demo accounts › rejects a logged-out session cookie replay (1.7s)
+  ok 32 [chromium-narrow] › auth.spec.ts:123:3 › fictional-demo accounts › rejects an account mutation without a CSRF token (210ms)
+  ok 33 [chromium-narrow] › auth.spec.ts:132:3 › fictional-demo accounts › keeps account pages form-operable on a narrow viewport without horizontal scrolling (528ms)
+  ok 34 [chromium-narrow] › auth.spec.ts:151:3 › fictional-demo accounts › does not contact Nuance or any external origin during account activity (1.0s)
+  ok 35 [chromium-narrow] › avatar.spec.ts:16:3 › disclosure and no media before Start › page states what it is and gives no legal advice (543ms)
+  ok 36 [chromium-narrow] › avatar.spec.ts:23:3 › disclosure and no media before Start › starts no microphone and no camera on load (579ms)
+  ok 37 [chromium-narrow] › avatar.spec.ts:46:3 › disclosure and no media before Start › links provider terms and the privacy/recording policy (578ms)
+  ok 38 [chromium-narrow] › avatar.spec.ts:60:3 › request protection › bootstrap rejects a foreign Origin and sets no permissive CORS (232ms)
+  ok 39 [chromium-narrow] › avatar.spec.ts:68:3 › request protection › token POST rejects a missing Origin (228ms)
+  ok 40 [chromium-narrow] › avatar.spec.ts:78:3 › request protection › token POST rejects a foreign Origin (396ms)
+  ok 41 [chromium-narrow] › avatar.spec.ts:87:3 › request protection › token POST rejects a missing CSRF header even with a valid origin (241ms)
+  ok 42 [chromium-narrow] › avatar.spec.ts:96:3 › request protection › GET on the token route is 405 (216ms)
+  ok 43 [chromium-narrow] › avatar.spec.ts:103:3 › request protection › a fully valid request reports the missing key as 503, never a token (229ms)
+  ok 44 [chromium-narrow] › avatar.spec.ts:114:3 › request protection › no CORS headers are emitted for a cross-origin preflight (212ms)
+  ok 45 [chromium-narrow] › avatar.spec.ts:127:3 › failure state is honest, not a fake success › Start without a key shows an unavailable state and no avatar (959ms)
+  ok 46 [chromium-narrow] › avatar.spec.ts:137:3 › failure state is honest, not a fake success › offers a retry after the failure and stays keyboard operable (664ms)
+  ok 47 [chromium-narrow] › avatar.spec.ts:151:3 › narrow viewport › controls remain visible and operable on a phone-sized screen (589ms)
+  ok 48 [chromium-narrow] › foundation.spec.ts:12:3 › foundation landing › states the fictional boundary and links demo accounts without a landing form (477ms)
+  ok 49 [chromium-narrow] › foundation.spec.ts:33:3 › foundation landing › reports the health contract and makes only foundation API requests (519ms)
+  ok 50 [chromium-narrow] › foundation.spec.ts:55:3 › foundation landing › shows an actionable keyboard retry after API failure and recovers (812ms)
+  ok 51 [chromium-narrow] › foundation.spec.ts:87:3 › foundation landing › treats a malformed health body as unavailable (489ms)
+  ok 52 [chromium-narrow] › foundation.spec.ts:100:3 › foundation landing › is readable and operable on a phone viewport without horizontal scrolling (550ms)
+  ok 53 [chromium-narrow] › foundation.spec.ts:112:3 › foundation landing › keeps Mira as an explicit optional page (735ms)
+  ok 54 [chromium-narrow] › private-documents.spec.ts:44:3 › private cases and encrypted documents › creates a case, uploads/downloads a PDF, and performs confirmed live deletion (2.9s)
+  ok 55 [chromium-narrow] › private-documents.spec.ts:87:3 › private cases and encrypted documents › keeps two accounts and their private cases isolated (2.4s)
+  ok 56 [chromium-narrow] › private-documents.spec.ts:114:3 › private cases and encrypted documents › keeps the private case forms operable on a narrow viewport without horizontal scrolling (1.2s)
+
+  56 passed (54.6s)
+
+====================================================================================================
+OUTPUT exposure.log
+====================================================================================================
+origin/main e2edea5 commits 26 | tracked files with owner path: 6
+     START_HERE.md
+     _bmad-output/implementation-artifacts/spec-v0-s1-mira-connection-spike.md
+     docs/evidence/E0-S1-builder.md
+     docs/evidence/E0-S2-builder.md
+     docs/evidence/V0-S1-builder.md
+     docs/product/Project_Second_Chance_PRD.md
+origin/feature/e1-s2-private-documents 744f00a commits 29 | tracked files with owner path: 6
+     START_HERE.md
+     _bmad-output/implementation-artifacts/spec-v0-s1-mira-connection-spike.md
+     docs/evidence/E0-S1-builder.md
+     docs/evidence/E0-S2-builder.md
+     docs/evidence/V0-S1-builder.md
+     docs/product/Project_Second_Chance_PRD.md
+HEAD tracked files with owner path: 7 | not already on published feature: ['docs/evidence/E1-S2-corrective-2026-11-25.md']
+modified tracked: 25 files, with owner path: 0
+untracked, not ignored: 52 files, with owner path: 11
+     docs/evidence/E1-S2-claude-final-review-3600dd6.md
+     docs/evidence/E1-S2-claude-review-03b1bb8-worktree-2026-11-25.md
+     docs/evidence/E1-S2-codex-3600dd6-checks.txt
+     docs/evidence/E1-S2-codex-corrective-03b1bb8-checks.txt
+     docs/evidence/E1-S2-codex-corrective-verification-03b1bb8.md
+     docs/evidence/E1-S2-codex-cv-retest-2026-11-25-checks.txt
+     docs/evidence/E1-S2-codex-cv-retest-2026-11-25.md
+     docs/evidence/E1-S2-codex-cv3-provenance-retest-2026-11-25-checks.txt
+     docs/evidence/E1-S2-codex-cv3-r2-retest-2026-11-25-checks.txt
+     docs/evidence/E1-S2-codex-independent-testing-3600dd6.md
+     docs/evidence/E1-S2-focused-corrective-github-2026-11-25.md
+published commit author/committer address entries: 58 | not a GitHub noreply address: 58
+root license files tracked at HEAD: []
+--- production dependency license fields (installed metadata, direct only)
+    @node-rs/argon2          MIT                          license file: ['LICENSE']
+    @nuancelabs/js-sdk       Apache-2.0                   license file: ['LICENSE']
+    better-sqlite3           MIT                          license file: ['LICENSE']
+    cookie-parser            MIT                          license file: ['LICENSE']
+    csrf-sync                ISC                          license file: ['LICENSE.md']
+    dotenv                   BSD-2-Clause                 license file: ['LICENSE']
+    express                  MIT                          license file: ['LICENSE']
+    express-rate-limit       MIT                          license file: ['license']
+    express-session          MIT                          license file: ['LICENSE']
+    file-type                MIT                          license file: ['license']
+    image-size               MIT                          license file: ['LICENSE']
+    multer                   MIT                          license file: ['LICENSE']
+    passport                 MIT                          license file: ['LICENSE']
+    passport-local           [{'type': 'MIT', 'url': 'http://www.opensource.org/licenses/MIT'}] license file: ['LICENSE']
+    pdf-lib                  MIT                          license file: ['LICENSE.md']
+    react                    MIT                          license file: ['LICENSE']
+    react-dom                MIT                          license file: ['LICENSE']
+
+====================================================================================================
+OUTPUT focused.log
+====================================================================================================
+
+ RUN  v2.1.8 <SP>/r2/c/ProjectSecondChance
+
+stdout | tests/independent/e1-s2-focused-ui.test.tsx > SAFE: definite upload failure must still reconcile identity > CONTROL same case: 401 after session ended
+{"status":401,"switchCase":false,"stillShowsA":false,"stillShowsCaseList":false,"meCalls":2,"alerts":["You are signed out. Sign in before accessing private cases."]}
+
+stdout | tests/independent/e1-s2-focused-ui.test.tsx > SAFE: definite upload failure must still reconcile identity > case switched: 401 after session ended
+{"status":401,"switchCase":true,"stillShowsA":false,"stillShowsCaseList":false,"meCalls":2,"alerts":["You are signed out. Sign in before accessing private cases."]}
+
+stdout | tests/independent/e1-s2-focused-ui.test.tsx > SAFE: definite upload failure must still reconcile identity > CONTROL same case: 403 after another account signed in
+{"status":403,"switchCase":false,"stillShowsA":false,"stillShowsCaseList":false,"meCalls":2,"alerts":["You are signed out. Sign in before accessing private cases."]}
+
+stdout | tests/independent/e1-s2-focused-ui.test.tsx > SAFE: definite upload failure must still reconcile identity > case switched: 403 after another account signed in
+{"status":403,"switchCase":true,"stillShowsA":false,"stillShowsCaseList":false,"meCalls":2,"alerts":["You are signed out. Sign in before accessing private cases."]}
+
+stdout | tests/independent/e1-s2-focused-ui.test.tsx > SAFE: definite upload failure must still reconcile identity > CONTROL same case: 404 after another account signed in
+{"status":404,"switchCase":false,"stillShowsA":false,"stillShowsCaseList":false,"meCalls":2,"alerts":["You are signed out. Sign in before accessing private cases."]}
+
+stdout | tests/independent/e1-s2-focused-ui.test.tsx > SAFE: definite upload failure must still reconcile identity > case switched: 404 after another account signed in
+{"status":404,"switchCase":true,"stillShowsA":false,"stillShowsCaseList":false,"meCalls":2,"alerts":["You are signed out. Sign in before accessing private cases."]}
+
+stdout | tests/independent/e1-s2-focused-ui.test.tsx > CR-4 policy verification: a successful write whose refresh proves another account > upload then list owned by B
+{"probe":"upload-mismatch","stillShowsA":false,"stillShowsCaseList":false,"meCalls":2,"alerts":["You are signed out. Sign in before accessing private cases."],"docStillShown":false}
+
+stdout | tests/independent/e1-s2-focused-ui.test.tsx > CR-4 policy verification: a successful write whose refresh proves another account > document delete then list owned by B
+{"probe":"delete-document-mismatch","stillShowsA":false,"stillShowsCaseList":false,"meCalls":2,"alerts":["You are signed out. Sign in before accessing private cases."],"deletedDocStillListed":false}
+
+stdout | tests/independent/e1-s2-focused-ui.test.tsx > SAFE: a confirmed write must not be reported as failed when only the refresh fails > edit, refresh 503
+{"op":"edit","refresh":503,"message":"The case was saved, but the refreshed list could not be verified. Refresh before continuing.","deletedCaseStillOpen":true}
+
+stdout | tests/independent/e1-s2-focused-ui.test.tsx > SAFE: a confirmed write must not be reported as failed when only the refresh fails > delete-case, refresh 503
+{"op":"delete-case","refresh":503,"message":"The case was deleted, but the refreshed list could not be verified. Refresh before continuing.","deletedCaseStillOpen":false}
+
+stdout | tests/independent/e1-s2-focused-ui.test.tsx > SAFE: a confirmed write must not be reported as failed when only the refresh fails > delete-document, refresh 503
+{"op":"delete-document","refresh":503,"message":"The document was deleted, but the refreshed list could not be verified. Refresh before continuing.","deletedCaseStillOpen":true}
+
+stdout | tests/independent/e1-s2-focused-ui.test.tsx > SAFE: a confirmed write must not be reported as failed when only the refresh fails > edit, refresh 0
+{"op":"edit","refresh":0,"message":"The case was saved, but the refreshed list could not be verified. Refresh before continuing.","deletedCaseStillOpen":true}
+
+stdout | tests/independent/e1-s2-focused-ui.test.tsx > SAFE: a confirmed write must not be reported as failed when only the refresh fails > delete-case, refresh 0
+{"op":"delete-case","refresh":0,"message":"The case was deleted, but the refreshed list could not be verified. Refresh before continuing.","deletedCaseStillOpen":false}
+
+stdout | tests/independent/e1-s2-focused-ui.test.tsx > SAFE: a confirmed write must not be reported as failed when only the refresh fails > delete-document, refresh 0
+{"op":"delete-document","refresh":0,"message":"The document was deleted, but the refreshed list could not be verified. Refresh before continuing.","deletedCaseStillOpen":true}
+
+ ✓ tests/independent/e1-s2-focused-ui.test.tsx (14 tests) 2857ms
+stdout | tests/independent/e1-s2-focused-store.test.ts > CR-5 residual: unavailable blob root during reconciliation must not permanently disable an intact document
+{"kind":"root","reconciliationThrew":true,"statusAfterRestoration":"ready","readableAfterRestoration":true,"ciphertextUnchanged":true}
+
+stdout | tests/independent/e1-s2-focused-store.test.ts > CR-5 residual: unavailable blob shard during reconciliation must not permanently disable an intact document
+{"kind":"shard","reconciliationThrew":true,"statusAfterRestoration":"ready","readableAfterRestoration":true,"ciphertextUnchanged":true}
+
+ ✓ tests/independent/e1-s2-focused-store.test.ts (5 tests) 242ms
+
+ Test Files  2 passed (2)
+      Tests  19 passed (19)
+   Start at  23:28:17
+   Duration  5.51s (transform 169ms, setup 420ms, collect 507ms, tests 3.10s, environment 831ms, prepare 245ms)
+
+====================================================================================================
+OUTPUT followup.log
+====================================================================================================
+== 1. maintained assertion strength (test line 435)
+   shipped assertion, removal code removed : exit 0; 1 passed | 32 skipped (33)
+   pattern assertion, shipped source       : exit 0; 1 passed | 32 skipped (33)
+   pattern assertion, removal code removed : exit 1; 1 failed | 32 skipped (33)
+== 2. all three CR-6 guards removed together
+   maintained suite: exit 0; 376 passed (376)
+   late408 probe, guards removed: exit 0; stack frame lines 6; header errors 5
+      signed-in, invalid file after 408 {"statuses":["408 {\"error\":\"invalid-upload\"}"],"socketError":null}
+      signed-in, no file after 408 {"statuses":["408 {\"error\":\"invalid-upload\"}"],"socketError":null}
+      logged out, invalid file after 408 {"statuses":["401 {\"error\":\"unauthenticated\"}"],"socketError":null}
+      signed-in, second file after 408 {"statuses":["408 {\"error\":\"invalid-upload\"}"],"socketError":null}
+      server exited: null | health after: 200
+      stderr lines: 37 | ERR_HTTP_HEADERS_SENT mentions: 2 | MulterError lines: 1 | stack frames: 29 | frames with absolute paths: 22
+      first error lines (paths redacted):
+      MulterError: Too many files
+      Error [ERR_HTTP_HEADERS_SENT]: Cannot set headers after they are sent to the client
+      TypeError: Cannot read properties of undefined (reading 'destroy')
+      Error [ERR_HTTP_HEADERS_SENT]: Cannot set headers after they are sent to the client
+      APP FRAMES:
+   late408 probe, guards restored: exit 0; stack frame lines 0; header errors 1
+      signed-in, invalid file after 408 {"statuses":["408 {\"error\":\"invalid-upload\"}"],"socketError":null}
+      signed-in, no file after 408 {"statuses":["408 {\"error\":\"invalid-upload\"}"],"socketError":null}
+      logged out, invalid file after 408 {"statuses":["401 {\"error\":\"unauthenticated\"}"],"socketError":null}
+      signed-in, second file after 408 {"statuses":["408 {\"error\":\"invalid-upload\"}"],"socketError":null}
+      server exited: null | health after: 200
+      stderr lines: 4 | ERR_HTTP_HEADERS_SENT mentions: 0 | MulterError lines: 0 | stack frames: 0 | frames with absolute paths: 0
+      first error lines (paths redacted):
+      APP FRAMES:
+      (node:25800) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+      (Use `node --trace-deprecation ...` to show where the warning was created)
+copy manifest mismatches after follow-ups: []
+
+====================================================================================================
+OUTPUT history.log
+====================================================================================================
+== docs/evidence/E1-S2-builder.md | earlier copy matches the CV3-R2 manifest hash: True
+  [Final checks]
+      committed HEAD: 213,347 | CV3-R2 tree: 213,348 | current: 227,376
+  [CV-3-R2 corrective follow-up]
+      committed HEAD: - | CV3-R2 tree: 213,348 | current: 227,376
+  [CV corrective cycle � Codex verification (`03b1bb8`)]
+      committed HEAD: - | CV3-R2 tree: 213,348 | current: 227,376
+  [CR-5-R1 directory-availability correction]
+      committed HEAD: - | CV3-R2 tree: - | current: 227,376
+== docs/planning/RISK_REGISTER.md | earlier copy matches the CV3-R2 manifest hash: True
+  [E1-S2 corrective-cycle update � 2026-11-25]
+      committed HEAD: 213,347 | CV3-R2 tree: 213,348 | current: 227,376
+  [E1-S2 CV corrective update � 2026-11-25]
+      committed HEAD: - | CV3-R2 tree: 213,348 | current: 227,376
+
+====================================================================================================
+OUTPUT late408.log
+====================================================================================================
+signed-in, invalid file after 408 {"statuses":["408 {\"error\":\"invalid-upload\"}"],"socketError":null}
+signed-in, no file after 408 {"statuses":["408 {\"error\":\"invalid-upload\"}"],"socketError":null}
+logged out, invalid file after 408 {"statuses":["401 {\"error\":\"unauthenticated\"}"],"socketError":null}
+signed-in, second file after 408 {"statuses":["408 {\"error\":\"invalid-upload\"}"],"socketError":null}
+server exited: null | health after: 200
+stderr lines: 4 | ERR_HTTP_HEADERS_SENT mentions: 0 | MulterError lines: 0 | stack frames: 0 | frames with absolute paths: 0
+first error lines (paths redacted):
+
+APP FRAMES:
+
+====================================================================================================
+OUTPUT lifecycle.log
+====================================================================================================
+
+ RUN  v2.1.8 <SP>/r2/c/ProjectSecondChance
+
+ ✓ tests/independent/e1-s2-r2-lifecycle.test.tsx (4 tests) 832ms
+
+ Test Files  1 passed (1)
+      Tests  4 passed (4)
+   Start at  23:28:39
+   Duration  3.12s (transform 100ms, setup 216ms, collect 380ms, tests 832ms, environment 1.04s, prepare 225ms)
+
+====================================================================================================
+OUTPUT maintained.log
+====================================================================================================
+
+> project-second-chance@0.0.0 test
+> vitest run
+
+
+ RUN  v2.1.8 <SP>/r2/c/ProjectSecondChance
+
+ ✓ apps/server/src/avatar/nuanceGateway.test.ts (10 tests) 17ms
+ ✓ apps/server/src/avatar/attemptRegistry.test.ts (18 tests) 15ms
+ ✓ apps/server/src/private/crypto.test.ts (10 tests) 104ms
+ ✓ apps/server/src/private/privateStore.test.ts (18 tests) 1564ms
+ ✓ apps/server/src/routes.test.ts (20 tests) 793ms
+ ✓ apps/server/src/auth/sessionStore.test.ts (6 tests) 370ms
+ ✓ apps/server/src/private/privateConfig.test.ts (4 tests) 525ms
+ ✓ apps/server/src/health/health.routes.test.ts (4 tests) 160ms
+ ✓ apps/server/src/auth/accountStore.test.ts (7 tests) 304ms
+ ✓ apps/server/src/avatar/sessionGuard.test.ts (25 tests) 18ms
+ ✓ apps/server/src/private/uploadValidation.test.ts (11 tests) 4238ms
+   ✓ upload validation > accepts a real one-page PDF and reports its detected type 1442ms
+   ✓ upload validation > rejects corrupt and encrypted-looking PDFs 819ms
+   ✓ upload validation > rejects non-whitespace bytes after the final PDF EOF marker but accepts trailing whitespace 933ms
+   ✓ upload validation > rejects PDFs over the page cap 940ms
+ ✓ apps/server/src/config.test.ts (8 tests) 63ms
+ ✓ apps/server/src/auth/auth.routes.test.ts (23 tests) 5690ms
+   ✓ account lifecycle > creates an account and signs in with a real session, then signs out 382ms
+   ✓ account lifecycle > uses a uniform public outcome for valid new/duplicate registration and generic validation failures 302ms
+   ✓ account lifecycle > keeps two independent fictional accounts isolated 425ms
+   ✓ session boundary > persists accounts and valid sessions across a clean app restart 366ms
+   ✓ session boundary > throttles repeated login attempts per identifier without revealing account existence 489ms
+   ✓ failure handling > supports signing in again immediately after an awaited logout without a stale cookie 321ms
+   ✓ failure handling > stops every session for a disabled account 312ms
+ ✓ apps/server/src/auth/authConfig.test.ts (4 tests) 32ms
+ ✓ apps/server/src/auth/password.test.ts (7 tests) 204ms
+ ✓ apps/server/src/private/sourceHygiene.test.ts (1 test) 80ms
+ ✓ apps/server/src/private/workerLifecycle.test.ts (2 tests) 721ms
+   ✓ configures the live worker with the bounded parser limits 678ms
+ ✓ apps/server/src/private/isolation.test.ts (1 test) 1772ms
+   ✓ browser config neutralizes inherited private data/key overrides 1771ms
+ ✓ apps/server/src/private/privateHardening.test.ts (36 tests) 9427ms
+   ✓ authorization is rechecked before publication > does not publish when the session is logged out while the upload is pending 467ms
+   ✓ authorization is rechecked before publication > does not re-send a logged-out session cookie from the late upload response 325ms
+   ✓ authorization is rechecked before publication > does not re-send a logged-out cookie on an unexpected validation exception 305ms
+   ✓ authorization is rechecked before publication > does not re-send a logged-out cookie on a late validation failure 312ms
+   ✓ authorization is rechecked before publication > does not attempt a second response when validation fails after the 408 372ms
+   ✓ authorization is rechecked before publication > does not attempt a second response when logout follows a 408 and validation then fails 320ms
+   ✓ upload concurrency > limits each user to two concurrent uploads and releases slots after completion 439ms
+   ✓ upload concurrency > does not count a second account against the first account upload limit 513ms
+   ✓ upload concurrency > does not release upload work slots merely because the response timed out 359ms
+   ✓ private storage readiness > keeps health live and returns 503 for authenticated private requests when storage is unavailable 336ms
+   ✓ request boundary > checks case ownership before parsing or validating an upload 852ms
+   ✓ request boundary > marks every private JSON response no-store 1014ms
+   ✓ upload validation > rejects a PDF whose end-of-file marker was cut off 661ms
+   ✓ startup never destroys ciphertext it cannot account for > fails closed when blobs exist but the database has no key check 352ms
+   ✓ incomplete work stays hidden or denied > denies download while the parent case is deleting 326ms
+   ✓ incomplete work stays hidden or denied > denies download while the parent case is error 332ms
+   ✓ incomplete work stays hidden or denied > does not list or return a pending document 341ms
+ ✓ apps/web/src/avatar/connection.test.ts (20 tests) 22ms
+ ✓ apps/server/src/private/privateRoutes.test.ts (12 tests) 12315ms
+   ✓ private cases and documents API > keeps cases/documents owner-isolated and hides foreign IDs consistently 704ms
+   ✓ private cases and documents API > creates, reads, edits, uploads, downloads and deletes an owned case/document 1513ms
+   ✓ private cases and documents API > rejects unauthenticated, missing-CSRF and foreign-Origin private mutations 347ms
+   ✓ private cases and documents API > rejects invalid, spoofed, oversize, multiple-file and traversal uploads without publishing 635ms
+   ✓ private cases and documents API > returns a generic failure without plaintext when a blob is tampered 1178ms
+   ✓ private cases and documents API > rejects expired sessions before private data access 312ms
+   ✓ private cases and documents API > rejects disabled-account private access after a previously valid session 693ms
+   ✓ private cases and documents API > does not claim deletion success when managed blob removal fails 1809ms
+   ✓ private cases and documents API > rechecks authorization at the private publication boundary 1054ms
+   ✓ private cases and documents API > fails closed on a wrong key and preserves readable data with the right key after restart 1399ms
+   ✓ private cases and documents API > does not publish a successful upload when staging/write fails 1288ms
+   ✓ private cases and documents API > keeps only ciphertext and encrypted metadata on disk and in the DB 1380ms
+ ✓ apps/web/src/App.test.tsx (26 tests) 700ms
+ ✓ apps/web/src/avatar/mediaOutput.integration.test.tsx (4 tests) 445ms
+   ✓ remote Mira output > attaches the remote tracks to page elements, follows replacements and detaches on Stop 300ms
+ ✓ apps/web/src/avatar/startFlow.integration.test.ts (8 tests) 753ms
+ ✓ apps/web/src/account/accountClient.test.ts (8 tests) 27ms
+ ✓ apps/web/src/foundation/FoundationLanding.test.tsx (7 tests) 421ms
+ ✓ apps/web/src/avatar/sdkAdapter.test.ts (4 tests) 9ms
+ ✓ apps/web/src/cases/CasesPage.test.tsx (33 tests) 6664ms
+   ✓ private cases page > creates a case only after a successful response and refreshes the list 609ms
+   ✓ private cases page: switching and session safety > reconciles identity for a 404 upload failure after the selected case changed 303ms
+   ✓ private cases page: switching and session safety > never saves one case with the edit fields of another 329ms
+   ✓ private cases page: switching and session safety > stops showing private content when a different account now holds the session 345ms
+ ✓ apps/web/src/account/AccountPage.test.tsx (21 tests) 7504ms
+   ✓ account page > shares one initial CSRF request across the StrictMode effect replay 359ms
+   ✓ account page > uses a fresh CSRF token after logout rather than the bootstrap result 1146ms
+   ✓ account page > creates an account without signing in, clears the password and prepares sign-in 1008ms
+   ✓ account page > signs in, shows only the current fictional account and signs out 1072ms
+   ✓ account page > disables both account actions while a sign-in is pending 895ms
+   ✓ account page > maps throttling to an actionable generic message without echoing credentials 806ms
+   ✓ account page > refuses a short fictional password before calling the API 711ms
+   ✓ account page > ignores a stale sign-in response after a newer attempt succeeds 961ms
+ ✓ apps/web/src/avatar/tokenAdapter.test.ts (2 tests) 26ms
+ ✓ apps/web/src/api/health.test.ts (6 tests) 34ms
+(node:36784) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/web/src/avatar/sdkContract.integration.test.ts (3 tests) 6ms
+ ✓ apps/web/src/cases/casesClient.test.ts (5 tests) 12ms
+ ✓ apps/web/src/entryPath.test.tsx (2 tests) 65ms
+
+ Test Files  34 passed (34)
+      Tests  376 passed (376)
+   Start at  23:27:20
+   Duration  26.90s (transform 2.51s, setup 26.13s, collect 22.57s, tests 55.10s, environment 44.46s, prepare 13.01s)
+
+====================================================================================================
+OUTPUT mutations.log
+====================================================================================================
+[fix] CV-1 E2E guards: DETECTED exit 1; 1 failed | 375 passed (376)
+       apps/server/src/auth/authConfig.test.ts > auth runtime settings > rejects E2E mode without an isolated runtime before touching the project runtime
+[fix] CV-2 old removeManaged: DETECTED exit 1; 2 failed | 374 passed (376)
+       apps/server/src/private/privateStore.test.ts > private store > does not delete metadata after an error-row retry when the blob root is missing
+       apps/server/src/private/privateStore.test.ts > private store > does not let a false exists() turn an intact blob into a deletion success
+[fix] CV-3 /me comparison: DETECTED exit 1; 1 failed | 375 passed (376)
+       apps/web/src/cases/CasesPage.test.tsx > private cases page: switching and session safety > does not render another account cases after an ambiguous upload identity change
+[fix] CV-3-R1/R2 provenance comparisons: DETECTED exit 1; 2 failed | 374 passed (376)
+       apps/web/src/cases/CasesPage.test.tsx > private cases page: switching and session safety > ends the session when a successful upload refresh reveals a different account
+       apps/web/src/cases/CasesPage.test.tsx > private cases page: switching and session safety > rejects another account case list during initial loading
+[fix] CV-4 unexpected-error recheck: DETECTED exit 1; 1 failed | 375 passed (376)
+       apps/server/src/private/privateHardening.test.ts > authorization is rechecked before publication > does not re-send a logged-out cookie on an unexpected validation except
+[fix] CV-5 message suppression: DETECTED exit 1; 1 failed | 375 passed (376)
+       apps/web/src/cases/CasesPage.test.tsx > private cases page: switching and session safety > does not show a switched-case upload error when identity is unchanged
+[fix] CV-6 early settle: DETECTED exit 1; 1 failed | 375 passed (376)
+       apps/server/src/private/workerLifecycle.test.ts > does not settle validation until the worker exit acknowledgement
+[fix] CR-1 early return restored: DETECTED exit 1; 3 failed | 373 passed (376)
+       apps/web/src/cases/CasesPage.test.tsx > private cases page: switching and session safety > reconciles identity for a 401 upload failure after the selected case changed
+       apps/web/src/cases/CasesPage.test.tsx > private cases page: switching and session safety > reconciles identity for a 403 upload failure after the selected case changed
+[fix] CR-3 reload swallow removed: DETECTED exit 1; 3 failed | 373 passed (376)
+       apps/web/src/cases/CasesPage.test.tsx > private cases page: switching and session safety > removes a confirmed deleted document even when the refresh fails
+       apps/web/src/cases/CasesPage.test.tsx > private cases page: switching and session safety > reports a confirmed document deletion even when the refresh fails
+[fix] CR-3 case-delete swallow removed: DETECTED exit 1; 1 failed | 375 passed (376)
+       apps/web/src/cases/CasesPage.test.tsx > private cases page: switching and session safety > reports a confirmed case deletion and closes it when the refresh fails
+[fix] CR-4 mismatch reconcile removed: DETECTED exit 1; 1 failed | 375 passed (376)
+       apps/web/src/cases/CasesPage.test.tsx > private cases page: switching and session safety > ends the session when a successful upload refresh reveals a different account
+[fix] CR-4 local removal of deleted document: SURVIVED exit 0; 376 passed (376)
+[fix] CR-5 reconcile uses exists() again: DETECTED exit 1; 2 failed | 374 passed (376)
+       apps/server/src/private/privateStore.test.ts > private store > does not mark a document missing when its blob shard is temporarily unavailable during reconciliation
+       apps/server/src/private/privateStore.test.ts > private store > does not mark an intact document missing when exists() is transiently false
+[fix] CR-5-R1 reconcile root+shard checks: DETECTED exit 1; 2 failed | 374 passed (376)
+       apps/server/src/private/privateStore.test.ts > private store > does not mark a document missing when its blob root is temporarily unavailable during reconciliation
+       apps/server/src/private/privateStore.test.ts > private store > does not mark a document missing when its blob shard is temporarily unavailable during reconciliation
+[fix] CR-5 startup root guard: DETECTED exit 1; 1 failed | 375 passed (376)
+       apps/server/src/private/privateStore.test.ts > private store > fails closed at startup when document rows exist but the blob root is unavailable
+[fix] CR-5 delete parent check: DETECTED exit 1; 1 failed | 375 passed (376)
+       apps/server/src/private/privateStore.test.ts > private store > does not delete metadata after an error-row retry when the blob root is missing
+[fix] CR-6 guard before missing-file branch: SURVIVED exit 0; 376 passed (376)
+[fix] CR-6 guard in validation catch: SURVIVED exit 0; 376 passed (376)
+[fix] CR-6 error middleware passes to Express: SURVIVED exit 0; 376 passed (376)
+[caee540] stored-session recheck: DETECTED exit 1; 6 failed | 370 passed (376)
+       apps/server/src/private/privateHardening.test.ts > authorization is rechecked before publication > does not publish when the account is disabled while the upload is pendi
+       apps/server/src/private/privateHardening.test.ts > authorization is rechecked before publication > does not publish when the session is logged out while the upload is pen
+[caee540] drop dead session before late 401: DETECTED exit 1; 4 failed | 372 passed (376)
+       apps/server/src/private/privateHardening.test.ts > authorization is rechecked before publication > does not re-send a logged-out cookie on a late validation failure
+       apps/server/src/private/privateHardening.test.ts > authorization is rechecked before publication > does not re-send a logged-out cookie on an unexpected validation except
+[caee540] no publication after 408/disconnect: DETECTED exit 1; 2 failed | 374 passed (376)
+       apps/server/src/private/privateHardening.test.ts > authorization is rechecked before publication > does not publish after the upload window already answered 408
+       apps/server/src/private/privateHardening.test.ts > upload concurrency > does not release upload work slots merely because the response timed out
+[caee540] cleanup does not follow links: DETECTED exit 1; 1 failed | 375 passed (376)
+       apps/server/src/private/privateHardening.test.ts > reconciliation stays inside managed files > does not follow a directory junction under blobs
+[caee540] cleanup keeps unmanaged names: DETECTED exit 1; 1 failed | 375 passed (376)
+       apps/server/src/private/privateHardening.test.ts > reconciliation stays inside managed files > keeps files that do not have managed names
+[caee540] data without key check fails closed: DETECTED exit 1; 1 failed | 375 passed (376)
+       apps/server/src/private/privateHardening.test.ts > startup never destroys ciphertext it cannot account for > does not adopt a new key when rows exist but the key check is
+[caee540] parent-case state blocks download: DETECTED exit 1; 2 failed | 374 passed (376)
+       apps/server/src/private/privateHardening.test.ts > incomplete work stays hidden or denied > denies download while the parent case is deleting
+       apps/server/src/private/privateHardening.test.ts > incomplete work stays hidden or denied > denies download while the parent case is error
+[caee540] pending hidden from list and detail: DETECTED exit 1; 1 failed | 375 passed (376)
+       apps/server/src/private/privateHardening.test.ts > incomplete work stays hidden or denied > does not list or return a pending document
+[caee540] truncated image rejection: DETECTED exit 1; 5 failed | 371 passed (376)
+       apps/server/src/private/privateHardening.test.ts > upload validation > rejects a JPEG cut off before its image data
+       apps/server/src/private/privateHardening.test.ts > upload validation > rejects a JPEG with no end-of-image marker
+[caee540] extension must match content: DETECTED exit 1; 1 failed | 375 passed (376)
+       apps/server/src/private/privateHardening.test.ts > upload validation > rejects a filename extension that does not match the content
+[caee540] direction-override rejection: DETECTED exit 1; 1 failed | 375 passed (376)
+       apps/server/src/private/privateHardening.test.ts > upload validation > rejects bidirectional-override characters that disguise a filename
+[caee540] C1 control rejection: SURVIVED exit 0; 376 passed (376)
+[caee540] UTF-8 filenames: DETECTED exit 1; 1 failed | 375 passed (376)
+       apps/server/src/private/privateHardening.test.ts > request boundary > keeps a non-ASCII filename intact
+[caee540] ownership before body parsing: DETECTED exit 1; 1 failed | 375 passed (376)
+       apps/server/src/private/privateHardening.test.ts > request boundary > checks case ownership before parsing or validating an upload
+[caee540] no-store on private JSON: DETECTED exit 1; 1 failed | 375 passed (376)
+       apps/server/src/private/privateHardening.test.ts > request boundary > marks every private JSON response no-store
+[caee540] malformed multipart is 400: DETECTED exit 1; 1 failed | 375 passed (376)
+       apps/server/src/private/privateHardening.test.ts > request boundary > answers a malformed multipart body with a generic 400, not a 500
+[caee540] UI edit fields reset on switch: DETECTED exit 1; 1 failed | 375 passed (376)
+       apps/web/src/cases/CasesPage.test.tsx > private cases page: switching and session safety > never saves one case with the edit fields of another
+[caee540] UI stale document list ignored: DETECTED exit 1; 1 failed | 375 passed (376)
+       apps/web/src/cases/CasesPage.test.tsx > private cases page: switching and session safety > ignores a late document list from a previously selected case
+[caee540] UI file choice cleared on switch: DETECTED exit 1; 1 failed | 375 passed (376)
+       apps/web/src/cases/CasesPage.test.tsx > private cases page: switching and session safety > drops a chosen file when the selected case changes
+[caee540] UI changed identity ends session: DETECTED exit 1; 6 failed | 370 passed (376)
+       apps/web/src/cases/CasesPage.test.tsx > private cases page: switching and session safety > leaves the private view when a read 404 reveals a different account session
+       apps/web/src/cases/CasesPage.test.tsx > private cases page: switching and session safety > reconciles identity for a 403 upload failure after the selected case changed
+[caee540] UI download disabled for non-ready case: SURVIVED exit 0; 376 passed (376)
+[caee540] UI refresh after failed delete: DETECTED exit 1; 1 failed | 375 passed (376)
+       apps/web/src/cases/CasesPage.test.tsx > private cases page: switching and session safety > refreshes to the failed state when a case deletion does not finish
+[caee540] UI incomplete-deletion label: DETECTED exit 1; 2 failed | 374 passed (376)
+       apps/web/src/cases/CasesPage.test.tsx > private cases page: switching and session safety > refreshes to the failed state when a case deletion does not finish
+       apps/web/src/cases/CasesPage.test.tsx > private cases page: switching and session safety > says plainly when a deletion is incomplete
+MUTATIONS COMPLETE; copy manifest mismatches: []
+
+====================================================================================================
+OUTPUT old-reconcile.probe.log
+====================================================================================================
+
+ RUN  v2.1.8 <SP>/r2/c/ProjectSecondChance
+
+stdout | claude-review/reconcile.probe.test.ts > SAFE: one start with a transient exists()=false must not permanently disable an intact document
+{"probe":"transient-stat","missingReportedOnFaultyStart":0,"statusAfterHealthyRestart":"ready","downloadableAfterHealthyRestart":true,"ciphertextFiles":1}
+
+ ❯ claude-review/reconcile.probe.test.ts (4 tests | 2 failed) 224ms
+   × CHARACTERIZE+SAFE: blobs folder away at one start (marker, DB and key correct) must not allow deletion success 42ms
+     → unavailable
+   × SAFE: restoring the blobs folder restores access 56ms
+     → unavailable
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  claude-review/reconcile.probe.test.ts > CHARACTERIZE+SAFE: blobs folder away at one start (marker, DB and key correct) must not allow deletion success
+PrivateStorageError: unavailable
+ ❯ Module.createPrivateStore apps/server/src/private/privateStore.ts:439:13
+    437|       // Existing document rows require a verified blob root. Never re…
+    438|       // empty root and then interpret every row as missing.
+    439|       throw new PrivateStorageError('unavailable');
+       |             ^
+    440|     }
+    441|   }
+ ❯ Object.boot claude-review/reconcile.probe.test.ts:19:19
+ ❯ claude-review/reconcile.probe.test.ts:54:22
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  claude-review/reconcile.probe.test.ts > SAFE: restoring the blobs folder restores access
+PrivateStorageError: unavailable
+ ❯ Module.createPrivateStore apps/server/src/private/privateStore.ts:439:13
+    437|       // Existing document rows require a verified blob root. Never re…
+    438|       // empty root and then interpret every row as missing.
+    439|       throw new PrivateStorageError('unavailable');
+       |             ^
+    440|     }
+    441|   }
+ ❯ Object.boot claude-review/reconcile.probe.test.ts:19:19
+ ❯ claude-review/reconcile.probe.test.ts:69:7
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 2 passed (4)
+   Start at  23:31:50
+   Duration  1.12s (transform 77ms, setup 222ms, collect 107ms, tests 224ms, environment 0ms, prepare 195ms)
+
+====================================================================================================
+OUTPUT old-session-switch.log
+====================================================================================================
+
+ RUN  v2.1.8 <SP>/r2/c/ProjectSecondChance
+
+stdout | claude-review/session-switch.probe.test.ts > after B signs in over A, A page token cannot write and A resource IDs cannot be read
+{"stale":{"create":403,"edit":403,"del":403},"listOwnerIsB":true,"listedForB":0,"aDocumentsUnderB":404}
+
+ ✓ claude-review/session-switch.probe.test.ts (1 test) 319ms
+   ✓ after B signs in over A, A page token cannot write and A resource IDs cannot be read 319ms
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  23:31:54
+   Duration  1.88s (transform 182ms, setup 219ms, collect 769ms, tests 319ms, environment 0ms, prepare 159ms)
+
+====================================================================================================
+OUTPUT old-ui.probe.log
+====================================================================================================
+
+ RUN  v2.1.8 <SP>/r2/c/ProjectSecondChance
+
+stdout | claude-review/ui.probe.test.tsx > SAFE: definite upload failure must still reconcile identity > CONTROL same case: 401 after session ended
+{"status":401,"switchCase":false,"stillShowsA":false,"stillShowsCaseList":false,"meCalls":2,"alerts":["You are signed out. Sign in before accessing private cases."]}
+
+stdout | claude-review/ui.probe.test.tsx > SAFE: definite upload failure must still reconcile identity > case switched: 401 after session ended
+{"status":401,"switchCase":true,"stillShowsA":false,"stillShowsCaseList":false,"meCalls":2,"alerts":["You are signed out. Sign in before accessing private cases."]}
+
+stdout | claude-review/ui.probe.test.tsx > SAFE: definite upload failure must still reconcile identity > CONTROL same case: 403 after another account signed in
+{"status":403,"switchCase":false,"stillShowsA":false,"stillShowsCaseList":false,"meCalls":2,"alerts":["You are signed out. Sign in before accessing private cases."]}
+
+stdout | claude-review/ui.probe.test.tsx > SAFE: definite upload failure must still reconcile identity > case switched: 403 after another account signed in
+{"status":403,"switchCase":true,"stillShowsA":false,"stillShowsCaseList":false,"meCalls":2,"alerts":["You are signed out. Sign in before accessing private cases."]}
+
+stdout | claude-review/ui.probe.test.tsx > SAFE: definite upload failure must still reconcile identity > CONTROL same case: 404 after another account signed in
+{"status":404,"switchCase":false,"stillShowsA":false,"stillShowsCaseList":false,"meCalls":2,"alerts":["You are signed out. Sign in before accessing private cases."]}
+
+stdout | claude-review/ui.probe.test.tsx > SAFE: definite upload failure must still reconcile identity > case switched: 404 after another account signed in
+{"status":404,"switchCase":true,"stillShowsA":false,"stillShowsCaseList":false,"meCalls":2,"alerts":["You are signed out. Sign in before accessing private cases."]}
+
+stdout | claude-review/ui.probe.test.tsx > SAFE: a confirmed write must not be reported as failed when only the refresh fails > edit, refresh 503
+{"op":"edit","refresh":503,"message":"The case was saved, but the refreshed list could not be verified. Refresh before continuing.","deletedCaseStillOpen":true}
+
+stdout | claude-review/ui.probe.test.tsx > SAFE: a confirmed write must not be reported as failed when only the refresh fails > delete-case, refresh 503
+{"op":"delete-case","refresh":503,"message":"The case was deleted, but the refreshed list could not be verified. Refresh before continuing.","deletedCaseStillOpen":false}
+
+stdout | claude-review/ui.probe.test.tsx > SAFE: a confirmed write must not be reported as failed when only the refresh fails > delete-document, refresh 503
+{"op":"delete-document","refresh":503,"message":"The document was deleted, but the refreshed list could not be verified. Refresh before continuing.","deletedCaseStillOpen":true}
+
+stdout | claude-review/ui.probe.test.tsx > SAFE: a confirmed write must not be reported as failed when only the refresh fails > edit, refresh 0
+{"op":"edit","refresh":0,"message":"The case was saved, but the refreshed list could not be verified. Refresh before continuing.","deletedCaseStillOpen":true}
+
+stdout | claude-review/ui.probe.test.tsx > SAFE: a confirmed write must not be reported as failed when only the refresh fails > delete-case, refresh 0
+{"op":"delete-case","refresh":0,"message":"The case was deleted, but the refreshed list could not be verified. Refresh before continuing.","deletedCaseStillOpen":false}
+
+stdout | claude-review/ui.probe.test.tsx > SAFE: a confirmed write must not be reported as failed when only the refresh fails > delete-document, refresh 0
+{"op":"delete-document","refresh":0,"message":"The document was deleted, but the refreshed list could not be verified. Refresh before continuing.","deletedCaseStillOpen":true}
+
+ ❯ claude-review/ui.probe.test.tsx (14 tests | 2 failed) 5234ms
+   ✓ SAFE: definite upload failure must still reconcile identity > CONTROL same case: 401 after session ended 335ms
+   × CHARACTERIZE: a successful write whose refresh proves another account > upload then list owned by B 1188ms
+     → Unable to find an element with the text: /could not be verified/. This could be because the text is broken up by multiple elements. In this case, you can provide a function for your text matcher to make your matcher more flexible.
+
+Ignored nodes: comments, script, style
+<body>
+  <div>
+    <main
+      class="cases-page"
+    >
+      <p
+        class="cases-banner"
+      >
+        Fictional data only
+      </p>
+      <h1>
+        Private cases
+      </h1>
+      <p
+        role="alert"
+      >
+        You are signed out. Sign in before accessing private cases.
+      </p>
+      <p>
+        <a
+          href="/account"
+        >
+          Sign in
+        </a>
+      </p>
+    </main>
+  </div>
+</body>
+
+Ignored nodes: comments, script, style
+<body>
+  <div>
+    <main
+      class="cases-page"
+    >
+      <p
+        class="cases-banner"
+      >
+        Fictional data only
+      </p>
+      <h1>
+        Private cases
+      </h1>
+      <p
+        role="alert"
+      >
+        You are signed out. Sign in before accessing private cases.
+      </p>
+      <p>
+        <a
+          href="/account"
+        >
+          Sign in
+        </a>
+      </p>
+    </main>
+  </div>
+</body>
+   × CHARACTERIZE: a successful write whose refresh proves another account > document delete then list owned by B 1193ms
+     → Unable to find an element with the text: /could not be verified/. This could be because the text is broken up by multiple elements. In this case, you can provide a function for your text matcher to make your matcher more flexible.
+
+Ignored nodes: comments, script, style
+<body>
+  <div>
+    <main
+      class="cases-page"
+    >
+      <p
+        class="cases-banner"
+      >
+        Fictional data only
+      </p>
+      <h1>
+        Private cases
+      </h1>
+      <p
+        role="alert"
+      >
+        You are signed out. Sign in before accessing private cases.
+      </p>
+      <p>
+        <a
+          href="/account"
+        >
+          Sign in
+        </a>
+      </p>
+    </main>
+  </div>
+</body>
+
+Ignored nodes: comments, script, style
+<body>
+  <div>
+    <main
+      class="cases-page"
+    >
+      <p
+        class="cases-banner"
+      >
+        Fictional data only
+      </p>
+      <h1>
+        Private cases
+      </h1>
+      <p
+        role="alert"
+      >
+        You are signed out. Sign in before accessing private cases.
+      </p>
+      <p>
+        <a
+          href="/account"
+        >
+          Sign in
+        </a>
+      </p>
+    </main>
+  </div>
+</body>
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  claude-review/ui.probe.test.tsx > CHARACTERIZE: a successful write whose refresh proves another account > upload then list owned by B
+TestingLibraryElementError: Unable to find an element with the text: /could not be verified/. This could be because the text is broken up by multiple elements. In this case, you can provide a function for your text matcher to make your matcher more flexible.
+
+Ignored nodes: comments, script, style
+<body>
+  <div>
+    <main
+      class="cases-page"
+    >
+      <p
+        class="cases-banner"
+      >
+        Fictional data only
+      </p>
+      <h1>
+        Private cases
+      </h1>
+      <p
+        role="alert"
+      >
+        You are signed out. Sign in before accessing private cases.
+      </p>
+      <p>
+        <a
+          href="/account"
+        >
+          Sign in
+        </a>
+      </p>
+    </main>
+  </div>
+</body>
+
+Ignored nodes: comments, script, style
+<body>
+  <div>
+    <main
+      class="cases-page"
+    >
+      <p
+        class="cases-banner"
+      >
+        Fictional data only
+      </p>
+      <h1>
+        Private cases
+      </h1>
+      <p
+        role="alert"
+      >
+        You are signed out. Sign in before accessing private cases.
+      </p>
+      <p>
+        <a
+          href="/account"
+        >
+          Sign in
+        </a>
+      </p>
+    </main>
+  </div>
+</body>
+ ❯ waitForWrapper ../../../../../../../../../../Documents/ChatGPT/Next Chapter Project/ProjectSecondChance/node_modules/@testing-library/dom/dist/wait-for.js:163:27
+ ❯ ../../../../../../../../../../Documents/ChatGPT/Next Chapter Project/ProjectSecondChance/node_modules/@testing-library/dom/dist/query-helpers.js:86:33
+ ❯ claude-review/ui.probe.test.tsx:97:18
+     95|     state.listOwner = B.id; state.me = B;
+     96|     await startUpload(user);
+     97|     await screen.findByText(/could not be verified/);
+       |                  ^
+     98|     console.log(JSON.stringify({ probe: 'upload-mismatch', ...snapshot…
+     99|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  claude-review/ui.probe.test.tsx > CHARACTERIZE: a successful write whose refresh proves another account > document delete then list owned by B
+TestingLibraryElementError: Unable to find an element with the text: /could not be verified/. This could be because the text is broken up by multiple elements. In this case, you can provide a function for your text matcher to make your matcher more flexible.
+
+Ignored nodes: comments, script, style
+<body>
+  <div>
+    <main
+      class="cases-page"
+    >
+      <p
+        class="cases-banner"
+      >
+        Fictional data only
+      </p>
+      <h1>
+        Private cases
+      </h1>
+      <p
+        role="alert"
+      >
+        You are signed out. Sign in before accessing private cases.
+      </p>
+      <p>
+        <a
+          href="/account"
+        >
+          Sign in
+        </a>
+      </p>
+    </main>
+  </div>
+</body>
+
+Ignored nodes: comments, script, style
+<body>
+  <div>
+    <main
+      class="cases-page"
+    >
+      <p
+        class="cases-banner"
+      >
+        Fictional data only
+      </p>
+      <h1>
+        Private cases
+      </h1>
+      <p
+        role="alert"
+      >
+        You are signed out. Sign in before accessing private cases.
+      </p>
+      <p>
+        <a
+          href="/account"
+        >
+          Sign in
+        </a>
+      </p>
+    </main>
+  </div>
+</body>
+ ❯ waitForWrapper ../../../../../../../../../../Documents/ChatGPT/Next Chapter Project/ProjectSecondChance/node_modules/@testing-library/dom/dist/wait-for.js:163:27
+ ❯ ../../../../../../../../../../Documents/ChatGPT/Next Chapter Project/ProjectSecondChance/node_modules/@testing-library/dom/dist/query-helpers.js:86:33
+ ❯ claude-review/ui.probe.test.tsx:107:18
+    105|     await user.click(screen.getByRole('button', { name: /^delete docum…
+    106|     await user.click(screen.getByRole('button', { name: /confirm delet…
+    107|     await screen.findByText(/could not be verified/);
+       |                  ^
+    108|     console.log(JSON.stringify({ probe: 'delete-document-mismatch', ..…
+    109|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 12 passed (14)
+   Start at  23:31:40
+   Duration  7.31s (transform 101ms, setup 217ms, collect 409ms, tests 5.23s, environment 838ms, prepare 221ms)
+
+====================================================================================================
+OUTPUT original.log
+====================================================================================================
+
+ RUN  v2.1.8 <SP>/r2/c/ProjectSecondChance
+
+ ❯ tests/independent/e1-s2-codex.test.ts (11 tests | 2 failed) 2784ms
+   ✓ P1/P2: denies every foreign-resource operation and parent substitution without exposing the label 435ms
+   × P9: disconnect releases a slot and the abandoned upload never publishes 230ms
+     → expected 429 to be 201 // Object.is equality
+   ✓ P6: a genuinely locked SQLite store fails without a published document 313ms
+   ✓ P6/P8: abrupt process exit after rename is reconciled without plaintext or a ready record 405ms
+   × R13 known limitation: a truncated incremental update after an earlier EOF is accepted 246ms
+     → promise rejected "UploadValidationError: invalid-upload { code: '…' }" instead of resolving
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/independent/e1-s2-codex.test.ts > P9: disconnect releases a slot and the abandoned upload never publishes
+AssertionError: expected 429 to be 201 // Object.is equality
+
+- Expected
++ Received
+
+- 201
++ 429
+
+ ❯ tests/independent/e1-s2-codex.test.ts:118:40
+    116|     await gate.entered; firstRequest.abort(); await one;
+    117|     await vi.waitFor(() => expect(h.uploadCloses).toBe(1));
+    118|     expect((await a.upload(c)).status).toBe(201);
+       |                                        ^
+    119|   } finally { gate.release(); }
+    120|   expect((await two).status).toBe(201);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  tests/independent/e1-s2-codex.test.ts > R13 known limitation: a truncated incremental update after an earlier EOF is accepted
+AssertionError: promise rejected "UploadValidationError: invalid-upload { code: '…' }" instead of resolving
+ ❯ tests/independent/e1-s2-codex.test.ts:220:117
+    218|   expect(truncated.subarray(-1024).includes('%%EOF')).toBe(true);
+    219|   expect(truncated.lastIndexOf('%%EOF')).toBe(base.lastIndexOf('%%EOF'…
+    220|   await expect(validation.validateUpload({ buffer: truncated, original…
+       |                                                                                                                     ^
+    221| });
+    222| 
+
+Caused by: UploadValidationError: invalid-upload
+ ❯ Module.validateUpload apps/server/src/private/uploadValidation.ts:149:15
+ ❯ tests/independent/e1-s2-codex.test.ts:220:3
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+Serialized Error: { code: 'invalid' }
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 9 passed (11)
+   Start at  23:29:18
+   Duration  4.45s (transform 186ms, setup 0ms, collect 1.02s, tests 2.78s, environment 0ms, prepare 212ms)
+
+====================================================================================================
+OUTPUT preserved-auth.log
+====================================================================================================
+
+ RUN  v2.1.8 <SP>/r2/c/ProjectSecondChance
+
+stderr | .setup/codex-auth-independent.test.tsx > spoofed forwarded addresses cannot evade the production per-source login limit
+ValidationError: The 'X-Forwarded-For' header is set but the Express 'trust proxy' setting is false (default). This could indicate a misconfiguration which would prevent express-rate-limit from accurately identifying users. See https://express-rate-limit.github.io/ERR_ERL_UNEXPECTED_X_FORWARDED_FOR/ for more information.
+    at Object.xForwardedForHeader (<repo>/node_modules/express-rate-limit/dist/index.mjs:360:13)
+    at Object.wrappedValidations.<computed> [as xForwardedForHeader] (<repo>/node_modules/express-rate-limit/dist/index.mjs:685:22)
+    at Object.keyGenerator (<repo>/node_modules/express-rate-limit/dist/index.mjs:795:20)
+    at <repo>/node_modules/express-rate-limit/dist/index.mjs:887:32
+    at processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at <repo>/node_modules/express-rate-limit/dist/index.mjs:840:5 {
+  code: 'ERR_ERL_UNEXPECTED_X_FORWARDED_FOR',
+  help: 'https://express-rate-limit.github.io/ERR_ERL_UNEXPECTED_X_FORWARDED_FOR/'
+}
+
+ ✓ .setup/codex-auth-independent.test.tsx (8 tests) 1234ms
+   ✓ spoofed forwarded addresses cannot evade the production per-source login limit 662ms
+
+ Test Files  1 passed (1)
+      Tests  8 passed (8)
+   Start at  23:29:29
+   Duration  4.22s (transform 179ms, setup 210ms, collect 1.27s, tests 1.23s, environment 856ms, prepare 280ms)
+
+====================================================================================================
+OUTPUT preserved-foundation.log
+====================================================================================================
+
+ RUN  v2.1.8 <SP>/r2/c/ProjectSecondChance
+
+ ✓ .setup/codex-foundation-independent.test.tsx (6 tests) 162ms
+
+ Test Files  1 passed (1)
+      Tests  6 passed (6)
+   Start at  23:29:36
+   Duration  3.06s (transform 113ms, setup 218ms, collect 1.11s, tests 162ms, environment 885ms, prepare 282ms)
+
+====================================================================================================
+OUTPUT preserved-private.log
+====================================================================================================
+
+ RUN  v2.1.8 <SP>/r2/c/ProjectSecondChance
+
+ ✓ .setup/codex-private-independent.test.ts (6 tests) 731ms
+
+ Test Files  1 passed (1)
+      Tests  6 passed (6)
+   Start at  23:29:25
+   Duration  2.15s (transform 182ms, setup 0ms, collect 807ms, tests 731ms, environment 0ms, prepare 192ms)
+
+====================================================================================================
+OUTPUT preserved-review.log
+====================================================================================================
+
+ RUN  v2.1.8 <SP>/r2/c/ProjectSecondChance
+
+ ✓ .setup/codex-mira-independent.test.tsx (2 tests) 262ms
+
+ Test Files  1 passed (1)
+      Tests  2 passed (2)
+   Start at  23:29:46
+   Duration  3.30s (transform 137ms, setup 229ms, collect 1.08s, tests 262ms, environment 989ms, prepare 271ms)
+
+====================================================================================================
+OUTPUT preserved-sdk-contract.log
+====================================================================================================
+
+ RUN  v2.1.8 <SP>/r2/c/ProjectSecondChance
+
+(node:30524) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ .setup/codex-mira-sdk-contract.test.ts (3 tests) 4ms
+
+ Test Files  1 passed (1)
+      Tests  3 passed (3)
+   Start at  23:29:42
+   Duration  1.74s (transform 48ms, setup 0ms, collect 97ms, tests 4ms, environment 852ms, prepare 226ms)
+
+====================================================================================================
+OUTPUT provenance.log
+====================================================================================================
+
+ RUN  v2.1.8 <SP>/r2/c/ProjectSecondChance
+
+stdout | tests/independent/e1-s2-provenance-ui.test.tsx > successful create must not render an intermediate account list
+{"operation":"create","displayedA":true,"displayedBCase":false}
+
+stdout | tests/independent/e1-s2-provenance-ui.test.tsx > successful edit must not render an intermediate account list
+{"operation":"edit","displayedA":true,"displayedBCase":false}
+
+stdout | tests/independent/e1-s2-provenance-ui.test.tsx > successful delete-case must not render an intermediate account list
+{"operation":"delete-case","displayedA":true,"displayedBCase":false}
+
+stdout | tests/independent/e1-s2-provenance-ui.test.tsx > successful delete-document must not render an intermediate account list
+{"operation":"delete-document","displayedA":true,"displayedBCase":false}
+
+stdout | tests/independent/e1-s2-provenance-ui.test.tsx > successful upload reconciliation handles same account list
+{"operation":"successful-upload","responseAccount":"same","displayedA":true,"displayedBCase":false}
+
+stdout | tests/independent/e1-s2-provenance-ui.test.tsx > successful upload reconciliation handles other account list
+{"operation":"successful-upload","responseAccount":"other","displayedA":true,"displayedBCase":false}
+
+ ✓ tests/independent/e1-s2-provenance-ui.test.tsx (11 tests) 2070ms
+   ✓ successful create must not render an intermediate account list 496ms
+ ✓ tests/independent/e1-s2-provenance-api.test.ts (1 test) 323ms
+   ✓ case-list provenance comes from each authenticated account and cannot be selected by query input 322ms
+ ✓ tests/independent/e1-s2-provenance-client.test.ts (4 tests) 7ms
+
+ Test Files  3 passed (3)
+      Tests  16 passed (16)
+   Start at  23:28:25
+   Duration  6.07s (transform 348ms, setup 618ms, collect 1.27s, tests 2.40s, environment 848ms, prepare 347ms)
+
+====================================================================================================
+OUTPUT reconcile-adapted.log
+====================================================================================================
+
+ RUN  v2.1.8 <SP>/r2/c/ProjectSecondChance
+
+stdout | claude-review/reconcile-adapted.probe.test.ts > blob folder away at startup fails closed, is not recreated, and restoring it restores access
+{"probe":"adapted","startupFailedClosed":true,"rootRecreated":false,"readableAfterRestore":true}
+
+ ✓ claude-review/reconcile-adapted.probe.test.ts (1 test) 104ms
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  23:32:54
+   Duration  1.03s (transform 71ms, setup 219ms, collect 109ms, tests 104ms, environment 0ms, prepare 188ms)
+
+====================================================================================================
+OUTPUT refresh-auth-current.log
+====================================================================================================
+
+ RUN  v2.1.8 <SP>/r2/c/ProjectSecondChance
+
+stdout | claude-review/refresh-auth.probe.test.tsx > list-401 > list-401 after confirmed create
+{"stage":"list-401","op":"create","injectedFired":true,"accountAStillShown":true,"meCalls":1,"alerts":["The case was created, but the refreshed list could not be verified. Refresh before continuing."]}
+
+stdout | claude-review/refresh-auth.probe.test.tsx > list-401 > list-401 after confirmed edit
+{"stage":"list-401","op":"edit","injectedFired":true,"accountAStillShown":true,"meCalls":1,"alerts":["The case was saved, but the refreshed list could not be verified. Refresh before continuing."]}
+
+stdout | claude-review/refresh-auth.probe.test.tsx > list-401 > list-401 after confirmed upload
+{"stage":"list-401","op":"upload","injectedFired":true,"accountAStillShown":true,"meCalls":1,"alerts":["The upload completed, but the refreshed list could not be verified. Refresh before continuing."]}
+
+stdout | claude-review/refresh-auth.probe.test.tsx > list-401 > list-401 after confirmed delete-document
+{"stage":"list-401","op":"delete-document","injectedFired":true,"accountAStillShown":true,"meCalls":1,"alerts":["The document was deleted, but the refreshed list could not be verified. Refresh before continuing."]}
+
+stdout | claude-review/refresh-auth.probe.test.tsx > list-401 > list-401 after confirmed delete-case
+{"stage":"list-401","op":"delete-case","injectedFired":true,"accountAStillShown":false,"meCalls":2,"alerts":["You are signed out. Sign in before accessing private cases."]}
+
+stdout | claude-review/refresh-auth.probe.test.tsx > documents-401 > documents-401 after confirmed create
+{"stage":"documents-401","op":"create","injectedFired":true,"accountAStillShown":true,"meCalls":1,"alerts":["The case was created, but the refreshed list could not be verified. Refresh before continuing."]}
+
+stdout | claude-review/refresh-auth.probe.test.tsx > documents-401 > documents-401 after confirmed edit
+{"stage":"documents-401","op":"edit","injectedFired":true,"accountAStillShown":true,"meCalls":1,"alerts":["The case was saved, but the refreshed list could not be verified. Refresh before continuing."]}
+
+stdout | claude-review/refresh-auth.probe.test.tsx > documents-401 > documents-401 after confirmed upload
+{"stage":"documents-401","op":"upload","injectedFired":true,"accountAStillShown":true,"meCalls":1,"alerts":["The upload completed, but the refreshed list could not be verified. Refresh before continuing."]}
+
+stdout | claude-review/refresh-auth.probe.test.tsx > documents-401 > documents-401 after confirmed delete-document
+{"stage":"documents-401","op":"delete-document","injectedFired":true,"accountAStillShown":true,"meCalls":1,"alerts":["The document was deleted, but the refreshed list could not be verified. Refresh before continuing."]}
+
+stdout | claude-review/refresh-auth.probe.test.tsx > documents-404-other-account > documents-404-other-account after confirmed create
+{"stage":"documents-404-other-account","op":"create","injectedFired":true,"accountAStillShown":true,"meCalls":1,"alerts":["The case was created, but the refreshed list could not be verified. Refresh before continuing."]}
+
+stdout | claude-review/refresh-auth.probe.test.tsx > documents-404-other-account > documents-404-other-account after confirmed edit
+{"stage":"documents-404-other-account","op":"edit","injectedFired":true,"accountAStillShown":true,"meCalls":1,"alerts":["The case was saved, but the refreshed list could not be verified. Refresh before continuing."]}
+
+stdout | claude-review/refresh-auth.probe.test.tsx > documents-404-other-account > documents-404-other-account after confirmed upload
+{"stage":"documents-404-other-account","op":"upload","injectedFired":true,"accountAStillShown":true,"meCalls":1,"alerts":["The upload completed, but the refreshed list could not be verified. Refresh before continuing."]}
+
+stdout | claude-review/refresh-auth.probe.test.tsx > documents-404-other-account > documents-404-other-account after confirmed delete-document
+{"stage":"documents-404-other-account","op":"delete-document","injectedFired":true,"accountAStillShown":true,"meCalls":1,"alerts":["The document was deleted, but the refreshed list could not be verified. Refresh before continuing."]}
+
+stdout | claude-review/refresh-auth.probe.test.tsx > control-503 > control-503 after confirmed create
+{"stage":"control-503","op":"create","injectedFired":true,"accountAStillShown":true,"meCalls":1,"alerts":["The case was created, but the refreshed list could not be verified. Refresh before continuing."]}
+
+stdout | claude-review/refresh-auth.probe.test.tsx > control-503 > control-503 after confirmed edit
+{"stage":"control-503","op":"edit","injectedFired":true,"accountAStillShown":true,"meCalls":1,"alerts":["The case was saved, but the refreshed list could not be verified. Refresh before continuing."]}
+
+stdout | claude-review/refresh-auth.probe.test.tsx > control-503 > control-503 after confirmed upload
+{"stage":"control-503","op":"upload","injectedFired":true,"accountAStillShown":true,"meCalls":1,"alerts":["The upload completed, but the refreshed list could not be verified. Refresh before continuing."]}
+
+stdout | claude-review/refresh-auth.probe.test.tsx > control-503 > control-503 after confirmed delete-document
+{"stage":"control-503","op":"delete-document","injectedFired":true,"accountAStillShown":true,"meCalls":1,"alerts":["The document was deleted, but the refreshed list could not be verified. Refresh before continuing."]}
+
+stdout | claude-review/refresh-auth.probe.test.tsx > control-503 > control-503 after confirmed delete-case
+{"stage":"control-503","op":"delete-case","injectedFired":true,"accountAStillShown":true,"meCalls":2,"alerts":["The case was deleted, but the refreshed list could not be verified. Refresh before continuing."]}
+
+ ❯ claude-review/refresh-auth.probe.test.tsx (18 tests | 12 failed) 5561ms
+   × list-401 > list-401 after confirmed create 577ms
+     → expected true to be false // Object.is equality
+   × list-401 > list-401 after confirmed edit 197ms
+     → expected true to be false // Object.is equality
+   × list-401 > list-401 after confirmed upload 268ms
+     → expected true to be false // Object.is equality
+   × list-401 > list-401 after confirmed delete-document 258ms
+     → expected true to be false // Object.is equality
+   ✓ list-401 > list-401 after confirmed delete-case 332ms
+   × documents-401 > documents-401 after confirmed create 488ms
+     → expected true to be false // Object.is equality
+   × documents-401 > documents-401 after confirmed edit 221ms
+     → expected true to be false // Object.is equality
+   × documents-401 > documents-401 after confirmed upload 286ms
+     → expected true to be false // Object.is equality
+   × documents-401 > documents-401 after confirmed delete-document 252ms
+     → expected true to be false // Object.is equality
+   × documents-404-other-account > documents-404-other-account after confirmed create 414ms
+     → expected true to be false // Object.is equality
+   × documents-404-other-account > documents-404-other-account after confirmed edit 222ms
+     → expected true to be false // Object.is equality
+   × documents-404-other-account > documents-404-other-account after confirmed upload 270ms
+     → expected true to be false // Object.is equality
+   × documents-404-other-account > documents-404-other-account after confirmed delete-document 274ms
+     → expected true to be false // Object.is equality
+   ✓ control-503 > control-503 after confirmed create 496ms
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 12 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  claude-review/refresh-auth.probe.test.tsx > list-401 > list-401 after confirmed create
+ FAIL  claude-review/refresh-auth.probe.test.tsx > list-401 > list-401 after confirmed edit
+ FAIL  claude-review/refresh-auth.probe.test.tsx > list-401 > list-401 after confirmed upload
+ FAIL  claude-review/refresh-auth.probe.test.tsx > list-401 > list-401 after confirmed delete-document
+ FAIL  claude-review/refresh-auth.probe.test.tsx > documents-401 > documents-401 after confirmed create
+ FAIL  claude-review/refresh-auth.probe.test.tsx > documents-401 > documents-401 after confirmed edit
+ FAIL  claude-review/refresh-auth.probe.test.tsx > documents-401 > documents-401 after confirmed upload
+ FAIL  claude-review/refresh-auth.probe.test.tsx > documents-401 > documents-401 after confirmed delete-document
+ FAIL  claude-review/refresh-auth.probe.test.tsx > documents-404-other-account > documents-404-other-account after confirmed create
+ FAIL  claude-review/refresh-auth.probe.test.tsx > documents-404-other-account > documents-404-other-account after confirmed edit
+ FAIL  claude-review/refresh-auth.probe.test.tsx > documents-404-other-account > documents-404-other-account after confirmed upload
+ FAIL  claude-review/refresh-auth.probe.test.tsx > documents-404-other-account > documents-404-other-account after confirmed delete-document
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ claude-review/refresh-auth.probe.test.tsx:94:23
+     92|           alerts: screen.queryAllByRole('alert').map((n) => n.textCont…
+     93|         // Lost or changed session must end the view; an ordinary 503 …
+     94|         expect(shown).toBe(stage === 'control-503');
+       |                       ^
+     95|       });
+     96|     }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/12]⎯
+
+ Test Files  1 failed (1)
+      Tests  12 failed | 6 passed (18)
+   Start at  23:30:18
+   Duration  9.25s (transform 138ms, setup 330ms, collect 688ms, tests 5.56s, environment 1.87s, prepare 251ms)
+
+====================================================================================================
+OUTPUT refresh-auth-head.log
+====================================================================================================
+
+ RUN  v2.1.8 <SP>/r2/c/ProjectSecondChance
+
+stdout | claude-review/refresh-auth.probe.test.tsx > list-401 > list-401 after confirmed create
+{"stage":"list-401","op":"create","injectedFired":true,"accountAStillShown":false,"meCalls":2,"alerts":["You are signed out. Sign in before accessing private cases."]}
+
+stdout | claude-review/refresh-auth.probe.test.tsx > list-401 > list-401 after confirmed edit
+{"stage":"list-401","op":"edit","injectedFired":true,"accountAStillShown":false,"meCalls":2,"alerts":["You are signed out. Sign in before accessing private cases."]}
+
+stdout | claude-review/refresh-auth.probe.test.tsx > list-401 > list-401 after confirmed upload
+{"stage":"list-401","op":"upload","injectedFired":true,"accountAStillShown":false,"meCalls":2,"alerts":["You are signed out. Sign in before accessing private cases."]}
+
+stdout | claude-review/refresh-auth.probe.test.tsx > list-401 > list-401 after confirmed delete-document
+{"stage":"list-401","op":"delete-document","injectedFired":true,"accountAStillShown":false,"meCalls":2,"alerts":["You are signed out. Sign in before accessing private cases."]}
+
+stdout | claude-review/refresh-auth.probe.test.tsx > list-401 > list-401 after confirmed delete-case
+{"stage":"list-401","op":"delete-case","injectedFired":true,"accountAStillShown":false,"meCalls":2,"alerts":["You are signed out. Sign in before accessing private cases."]}
+
+stdout | claude-review/refresh-auth.probe.test.tsx > documents-401 > documents-401 after confirmed create
+{"stage":"documents-401","op":"create","injectedFired":true,"accountAStillShown":false,"meCalls":2,"alerts":["You are signed out. Sign in before accessing private cases."]}
+
+stdout | claude-review/refresh-auth.probe.test.tsx > documents-401 > documents-401 after confirmed edit
+{"stage":"documents-401","op":"edit","injectedFired":true,"accountAStillShown":false,"meCalls":2,"alerts":["You are signed out. Sign in before accessing private cases."]}
+
+stdout | claude-review/refresh-auth.probe.test.tsx > documents-401 > documents-401 after confirmed upload
+{"stage":"documents-401","op":"upload","injectedFired":true,"accountAStillShown":false,"meCalls":2,"alerts":["You are signed out. Sign in before accessing private cases."]}
+
+stdout | claude-review/refresh-auth.probe.test.tsx > documents-401 > documents-401 after confirmed delete-document
+{"stage":"documents-401","op":"delete-document","injectedFired":true,"accountAStillShown":false,"meCalls":2,"alerts":["You are signed out. Sign in before accessing private cases."]}
+
+stdout | claude-review/refresh-auth.probe.test.tsx > documents-404-other-account > documents-404-other-account after confirmed create
+{"stage":"documents-404-other-account","op":"create","injectedFired":true,"accountAStillShown":false,"meCalls":2,"alerts":["You are signed out. Sign in before accessing private cases."]}
+
+stdout | claude-review/refresh-auth.probe.test.tsx > documents-404-other-account > documents-404-other-account after confirmed edit
+{"stage":"documents-404-other-account","op":"edit","injectedFired":true,"accountAStillShown":false,"meCalls":2,"alerts":["You are signed out. Sign in before accessing private cases."]}
+
+stdout | claude-review/refresh-auth.probe.test.tsx > documents-404-other-account > documents-404-other-account after confirmed upload
+{"stage":"documents-404-other-account","op":"upload","injectedFired":true,"accountAStillShown":false,"meCalls":2,"alerts":["You are signed out. Sign in before accessing private cases."]}
+
+stdout | claude-review/refresh-auth.probe.test.tsx > documents-404-other-account > documents-404-other-account after confirmed delete-document
+{"stage":"documents-404-other-account","op":"delete-document","injectedFired":true,"accountAStillShown":false,"meCalls":2,"alerts":["You are signed out. Sign in before accessing private cases."]}
+
+stdout | claude-review/refresh-auth.probe.test.tsx > control-503 > control-503 after confirmed create
+{"stage":"control-503","op":"create","injectedFired":true,"accountAStillShown":true,"meCalls":1,"alerts":["The case creation outcome is uncertain. Check the case list before trying again."]}
+
+stdout | claude-review/refresh-auth.probe.test.tsx > control-503 > control-503 after confirmed edit
+{"stage":"control-503","op":"edit","injectedFired":true,"accountAStillShown":true,"meCalls":1,"alerts":["Private storage is unavailable. Try again shortly."]}
+
+stdout | claude-review/refresh-auth.probe.test.tsx > control-503 > control-503 after confirmed upload
+{"stage":"control-503","op":"upload","injectedFired":true,"accountAStillShown":true,"meCalls":1,"alerts":["The upload outcome is uncertain. Check the document list before trying again."]}
+
+stdout | claude-review/refresh-auth.probe.test.tsx > control-503 > control-503 after confirmed delete-document
+{"stage":"control-503","op":"delete-document","injectedFired":true,"accountAStillShown":true,"meCalls":1,"alerts":["Private storage is unavailable. Try again shortly."]}
+
+stdout | claude-review/refresh-auth.probe.test.tsx > control-503 > control-503 after confirmed delete-case
+{"stage":"control-503","op":"delete-case","injectedFired":true,"accountAStillShown":true,"meCalls":1,"alerts":["Private storage is unavailable. Try again shortly."]}
+
+ ✓ claude-review/refresh-auth.probe.test.tsx (18 tests) 5422ms
+   ✓ list-401 > list-401 after confirmed create 508ms
+   ✓ documents-401 > documents-401 after confirmed create 481ms
+   ✓ documents-404-other-account > documents-404-other-account after confirmed create 461ms
+   ✓ control-503 > control-503 after confirmed create 495ms
+
+ Test Files  1 passed (1)
+      Tests  18 passed (18)
+   Start at  23:30:43
+   Duration  7.86s (transform 102ms, setup 233ms, collect 440ms, tests 5.42s, environment 1.10s, prepare 272ms)
+
+====================================================================================================
+OUTPUT refresh-auth-prior-reviewed.log
+====================================================================================================
+
+ RUN  v2.1.8 <SP>/r2/c/ProjectSecondChance
+
+stdout | claude-review/refresh-auth.probe.test.tsx > list-401 > list-401 after confirmed create
+{"stage":"list-401","op":"create","injectedFired":true,"accountAStillShown":false,"meCalls":2,"alerts":["You are signed out. Sign in before accessing private cases."]}
+
+stdout | claude-review/refresh-auth.probe.test.tsx > list-401 > list-401 after confirmed edit
+{"stage":"list-401","op":"edit","injectedFired":true,"accountAStillShown":false,"meCalls":2,"alerts":["You are signed out. Sign in before accessing private cases."]}
+
+stdout | claude-review/refresh-auth.probe.test.tsx > list-401 > list-401 after confirmed upload
+{"stage":"list-401","op":"upload","injectedFired":true,"accountAStillShown":false,"meCalls":2,"alerts":["You are signed out. Sign in before accessing private cases."]}
+
+stdout | claude-review/refresh-auth.probe.test.tsx > list-401 > list-401 after confirmed delete-document
+{"stage":"list-401","op":"delete-document","injectedFired":true,"accountAStillShown":false,"meCalls":2,"alerts":["You are signed out. Sign in before accessing private cases."]}
+
+stdout | claude-review/refresh-auth.probe.test.tsx > list-401 > list-401 after confirmed delete-case
+{"stage":"list-401","op":"delete-case","injectedFired":true,"accountAStillShown":false,"meCalls":2,"alerts":["You are signed out. Sign in before accessing private cases."]}
+
+stdout | claude-review/refresh-auth.probe.test.tsx > documents-401 > documents-401 after confirmed create
+{"stage":"documents-401","op":"create","injectedFired":true,"accountAStillShown":false,"meCalls":2,"alerts":["You are signed out. Sign in before accessing private cases."]}
+
+stdout | claude-review/refresh-auth.probe.test.tsx > documents-401 > documents-401 after confirmed edit
+{"stage":"documents-401","op":"edit","injectedFired":true,"accountAStillShown":false,"meCalls":2,"alerts":["You are signed out. Sign in before accessing private cases."]}
+
+stdout | claude-review/refresh-auth.probe.test.tsx > documents-401 > documents-401 after confirmed upload
+{"stage":"documents-401","op":"upload","injectedFired":true,"accountAStillShown":false,"meCalls":2,"alerts":["You are signed out. Sign in before accessing private cases."]}
+
+stdout | claude-review/refresh-auth.probe.test.tsx > documents-401 > documents-401 after confirmed delete-document
+{"stage":"documents-401","op":"delete-document","injectedFired":true,"accountAStillShown":false,"meCalls":2,"alerts":["You are signed out. Sign in before accessing private cases."]}
+
+stdout | claude-review/refresh-auth.probe.test.tsx > documents-404-other-account > documents-404-other-account after confirmed create
+{"stage":"documents-404-other-account","op":"create","injectedFired":true,"accountAStillShown":false,"meCalls":2,"alerts":["You are signed out. Sign in before accessing private cases."]}
+
+stdout | claude-review/refresh-auth.probe.test.tsx > documents-404-other-account > documents-404-other-account after confirmed edit
+{"stage":"documents-404-other-account","op":"edit","injectedFired":true,"accountAStillShown":false,"meCalls":2,"alerts":["You are signed out. Sign in before accessing private cases."]}
+
+stdout | claude-review/refresh-auth.probe.test.tsx > documents-404-other-account > documents-404-other-account after confirmed upload
+{"stage":"documents-404-other-account","op":"upload","injectedFired":true,"accountAStillShown":false,"meCalls":2,"alerts":["You are signed out. Sign in before accessing private cases."]}
+
+stdout | claude-review/refresh-auth.probe.test.tsx > documents-404-other-account > documents-404-other-account after confirmed delete-document
+{"stage":"documents-404-other-account","op":"delete-document","injectedFired":true,"accountAStillShown":false,"meCalls":2,"alerts":["You are signed out. Sign in before accessing private cases."]}
+
+stdout | claude-review/refresh-auth.probe.test.tsx > control-503 > control-503 after confirmed create
+{"stage":"control-503","op":"create","injectedFired":true,"accountAStillShown":true,"meCalls":1,"alerts":["The case creation outcome is uncertain. Check the case list before trying again."]}
+
+stdout | claude-review/refresh-auth.probe.test.tsx > control-503 > control-503 after confirmed edit
+{"stage":"control-503","op":"edit","injectedFired":true,"accountAStillShown":true,"meCalls":1,"alerts":["Private storage is unavailable. Try again shortly."]}
+
+stdout | claude-review/refresh-auth.probe.test.tsx > control-503 > control-503 after confirmed upload
+{"stage":"control-503","op":"upload","injectedFired":true,"accountAStillShown":true,"meCalls":1,"alerts":["The upload outcome is uncertain. Check the document list before trying again."]}
+
+stdout | claude-review/refresh-auth.probe.test.tsx > control-503 > control-503 after confirmed delete-document
+{"stage":"control-503","op":"delete-document","injectedFired":true,"accountAStillShown":true,"meCalls":1,"alerts":["Private storage is unavailable. Try again shortly."]}
+
+stdout | claude-review/refresh-auth.probe.test.tsx > control-503 > control-503 after confirmed delete-case
+{"stage":"control-503","op":"delete-case","injectedFired":true,"accountAStillShown":true,"meCalls":1,"alerts":["Private storage is unavailable. Try again shortly."]}
+
+ ✓ claude-review/refresh-auth.probe.test.tsx (18 tests) 5074ms
+   ✓ list-401 > list-401 after confirmed create 541ms
+   ✓ documents-401 > documents-401 after confirmed create 484ms
+   ✓ documents-404-other-account > documents-404-other-account after confirmed create 385ms
+   ✓ control-503 > control-503 after confirmed create 450ms
+
+ Test Files  1 passed (1)
+      Tests  18 passed (18)
+   Start at  23:30:31
+   Duration  7.83s (transform 113ms, setup 275ms, collect 547ms, tests 5.07s, environment 1.24s, prepare 263ms)
+
+====================================================================================================
+OUTPUT secrets-selftest.log
+====================================================================================================
+
+> project-second-chance@0.0.0 test:secrets
+> node --test scripts/verify-secrets.test.mjs
+
+warning: in the working copy of '.gitignore', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/web/src/app.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'leaky.ts', LF will be replaced by CRLF the next time Git touches it
+▶ findLeaks
+  ✔ flags a Nuance API key pasted into source (75.4934ms)
+  ✔ flags a browser-side reference to a server-only environment value (62.9584ms)
+  ✔ flags a committed .env file (52.1732ms)
+  ✔ does not flag synthetic test credentials, placeholders or names (59.166ms)
+  ✔ reports a line number but never the matched value (60.9695ms)
+  ✔ scopes to tracked files when a Git repository is present (309.756ms)
+  ✔ never reads the real .env to compare values (0.6047ms)
+✔ findLeaks (622.2758ms)
+ℹ tests 7
+ℹ suites 1
+ℹ pass 7
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 798.0126
+
+====================================================================================================
+OUTPUT sevencv.log
+====================================================================================================
+
+ RUN  v2.1.8 <SP>/r2/c/ProjectSecondChance
+
+stdout | tests/independent/e1-s2-corrective-api.test.ts > FIX C regression: retry must not report deletion success when stat is unavailable but ciphertext still exists
+{"deletionRetryStatus":503,"ciphertextStillExists":true,"documentRows":1}
+
+stdout | tests/independent/e1-s2-corrective-api.test.ts > FIX F regression: an unexpected validation failure after logout must suppress stale cookies too
+{"unexpectedValidationStatus":401,"staleCookiePresent":false,"publishedRows":0}
+
+ ✓ tests/independent/e1-s2-corrective-api.test.ts (10 tests | 8 skipped) 430ms
+stdout | tests/independent/e1-s2-corrective-worker.test.ts > FIX A/E lifecycle regression: validation must not settle until worker termination has actually completed
+{"validationSettledBeforeWorkerExit":false,"workerThreadStillRegistered":false}
+
+ ✓ tests/independent/e1-s2-corrective-worker.test.ts (5 tests | 4 skipped) 28ms
+ ✓ tests/independent/e1-s2-corrective-isolation.test.ts (5 tests | 3 skipped) 394ms
+   ✓ isolation: browser configuration must neutralize inherited private storage overrides 387ms
+ ↓ tests/independent/e1-s2-corrective-startup.test.ts (2 tests | 2 skipped)
+ ↓ tests/independent/e1-s2-corrective-hygiene.test.ts (1 test | 1 skipped)
+stdout | tests/independent/e1-s2-corrective-ui.test.tsx > FIX D regression: ambiguous response after account change must recheck identity before showing another account cases
+{"identityChecks":2,"newAccountCaseShown":false,"oldIdentityStillShown":false}
+
+ ✓ tests/independent/e1-s2-corrective-ui.test.tsx (5 tests | 3 skipped) 479ms
+
+ Test Files  4 passed | 2 skipped (6)
+      Tests  7 passed | 21 skipped (28)
+   Start at  23:28:45
+   Duration  6.91s (transform 296ms, setup 1.20s, collect 1.72s, tests 1.33s, environment 851ms, prepare 678ms)
+
+====================================================================================================
+OUTPUT shard.log
+====================================================================================================
+
+ RUN  v2.1.8 <SP>/r2/c/ProjectSecondChance
+
+stdout | claude-review/shard.probe.test.ts > INFO: every generated blob name lands in the same shard directory
+{"probe":"shards","documents":13,"shardDirectories":["bl"]}
+
+stdout | claude-review/shard.probe.test.ts > CONTROL blob-root lost, no upload: reconcile and two delete attempts fail closed
+{"probe":"control","kind":"blob-root","reconcile":"throw:unavailable","delete1":"throw:unavailable","delete2":"throw:unavailable","ciphertextIntactElsewhere":true}
+
+stdout | claude-review/shard.probe.test.ts > CONTROL blob-shard lost, no upload: reconcile and two delete attempts fail closed
+{"probe":"control","kind":"blob-shard","reconcile":"throw:unavailable","delete1":"throw:unavailable","delete2":"throw:unavailable","ciphertextIntactElsewhere":true}
+
+stdout | claude-review/shard.probe.test.ts > SAFE blob-root lost, one upload, then delete: no success while ciphertext exists elsewhere
+{"probe":"upload-then-delete","kind":"blob-root","upload":"ok:stored","shardRecreated":true,"delete1":"throw:unavailable","delete2":"ok:true","ciphertextIntactElsewhere":true}
+
+stdout | claude-review/shard.probe.test.ts > SAFE blob-root lost, one upload, then reconcile: intact document must not be marked lost
+{"probe":"upload-then-reconcile","kind":"blob-root","reconcile":"ok:{\"removedStaging\":0,\"removedOrphans\":0,\"missingBlobs\":1}","firstDocumentStatus":"error","ciphertextIntactElsewhere":true}
+
+stdout | claude-review/shard.probe.test.ts > SAFE blob-shard lost, one upload, then delete: no success while ciphertext exists elsewhere
+{"probe":"upload-then-delete","kind":"blob-shard","upload":"ok:stored","shardRecreated":true,"delete1":"throw:unavailable","delete2":"ok:true","ciphertextIntactElsewhere":true}
+
+stdout | claude-review/shard.probe.test.ts > SAFE blob-shard lost, one upload, then reconcile: intact document must not be marked lost
+{"probe":"upload-then-reconcile","kind":"blob-shard","reconcile":"ok:{\"removedStaging\":0,\"removedOrphans\":0,\"missingBlobs\":1}","firstDocumentStatus":"error","ciphertextIntactElsewhere":true}
+
+stdout | claude-review/shard.probe.test.ts > SAFE whole-data-dir lost, one upload, then delete: no success while ciphertext exists elsewhere
+{"probe":"upload-then-delete","kind":"whole-data-dir","upload":"throw:unavailable","shardRecreated":true,"delete1":"throw:unavailable","delete2":"ok:true","ciphertextIntactElsewhere":true}
+
+stdout | claude-review/shard.probe.test.ts > SAFE whole-data-dir lost, one upload, then reconcile: intact document must not be marked lost
+{"probe":"upload-then-reconcile","kind":"whole-data-dir","reconcile":"ok:{\"removedStaging\":0,\"removedOrphans\":0,\"missingBlobs\":1}","firstDocumentStatus":"error","ciphertextIntactElsewhere":true}
+
+stdout | claude-review/shard.probe.test.ts > SAFE API: with the shard moved away, an upload then two DELETE requests must not report success
+{"probe":"api","uploadDuringOutage":201,"delete1":503,"delete2":204,"firstStillListed":false,"ciphertextIntactElsewhere":true}
+
+ ❯ claude-review/shard.probe.test.ts (10 tests | 7 failed) 1592ms
+   × SAFE blob-root lost, one upload, then delete: no success while ciphertext exists elsewhere 54ms
+     → expected [ 'throw:unavailable', 'ok:true' ] to not include 'ok:true'
+   × SAFE blob-root lost, one upload, then reconcile: intact document must not be marked lost 67ms
+     → expected 'error' to be 'ready' // Object.is equality
+   × SAFE blob-shard lost, one upload, then delete: no success while ciphertext exists elsewhere 48ms
+     → expected [ 'throw:unavailable', 'ok:true' ] to not include 'ok:true'
+   × SAFE blob-shard lost, one upload, then reconcile: intact document must not be marked lost 48ms
+     → expected 'error' to be 'ready' // Object.is equality
+   × SAFE whole-data-dir lost, one upload, then delete: no success while ciphertext exists elsewhere 44ms
+     → expected [ 'throw:unavailable', 'ok:true' ] to not include 'ok:true'
+   × SAFE whole-data-dir lost, one upload, then reconcile: intact document must not be marked lost 45ms
+     → expected 'error' to be 'ready' // Object.is equality
+   × SAFE API: with the shard moved away, an upload then two DELETE requests must not report success 1026ms
+     → expected [ 503, 204 ] to not include 204
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 7 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  claude-review/shard.probe.test.ts > SAFE blob-root lost, one upload, then delete: no success while ciphertext exists elsewhere
+ FAIL  claude-review/shard.probe.test.ts > SAFE blob-shard lost, one upload, then delete: no success while ciphertext exists elsewhere
+ FAIL  claude-review/shard.probe.test.ts > SAFE whole-data-dir lost, one upload, then delete: no success while ciphertext exists elsewhere
+AssertionError: expected [ 'throw:unavailable', 'ok:true' ] to not include 'ok:true'
+ ❯ claude-review/shard.probe.test.ts:82:28
+     80|       const d2 = code(() => f.store.deleteDocument(f.owner, f.caseId, …
+     81|       console.log(JSON.stringify({ probe: 'upload-then-delete', kind, …
+     82|       expect([d1, d2]).not.toContain('ok:true');
+       |                            ^
+     83|     } finally { f.done(); }
+     84|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/7]⎯
+
+ FAIL  claude-review/shard.probe.test.ts > SAFE blob-root lost, one upload, then reconcile: intact document must not be marked lost
+ FAIL  claude-review/shard.probe.test.ts > SAFE blob-shard lost, one upload, then reconcile: intact document must not be marked lost
+ FAIL  claude-review/shard.probe.test.ts > SAFE whole-data-dir lost, one upload, then reconcile: intact document must not be marked lost
+AssertionError: expected 'error' to be 'ready' // Object.is equality
+
+Expected: "ready"
+Received: "error"
+
+ ❯ claude-review/shard.probe.test.ts:93:22
+     91|       const status = f.store.getDocument(f.owner, f.caseId, f.first)?.…
+     92|       console.log(JSON.stringify({ probe: 'upload-then-reconcile', kin…
+     93|       expect(status).toBe('ready');
+       |                      ^
+     94|     } finally { f.done(); }
+     95|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/7]⎯
+
+ FAIL  claude-review/shard.probe.test.ts > SAFE API: with the shard moved away, an upload then two DELETE requests must not report success
+AssertionError: expected [ 503, 204 ] to not include 204
+ ❯ claude-review/shard.probe.test.ts:126:26
+    124|     const intact = files(join(root, 'moved-away')).some((p) => sha(p) …
+    125|     console.log(JSON.stringify({ probe: 'api', uploadDuringOutage: dur…
+    126|     expect([d1, d2]).not.toContain(204);
+       |                          ^
+    127|   } finally { auth.close(); rmSync(root, { recursive: true, force: tru…
+    128| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/7]⎯
+
+ Test Files  1 failed (1)
+      Tests  7 failed | 3 passed (10)
+   Start at  23:31:20
+   Duration  3.40s (transform 185ms, setup 207ms, collect 997ms, tests 1.59s, environment 0ms, prepare 178ms)
+
+====================================================================================================
+OUTPUT shutdown.log
+====================================================================================================
+{"shardMovedBeforeStop":false,"uploadStatus":201,"hadShard":true,"exitCode":0,"privateStorageErrorInStderr":false,"stackFrames":0,"framesWithAbsolutePaths":0}
+{"shardMovedBeforeStop":true,"uploadStatus":201,"hadShard":true,"exitCode":1,"privateStorageErrorInStderr":true,"stackFrames":10,"framesWithAbsolutePaths":3}
+
+====================================================================================================
+OUTPUT supplementary.log
+====================================================================================================
+
+ RUN  v2.1.8 <SP>/r2/c/ProjectSecondChance
+
+stdout | tests/independent/e1-s2-corrective-api.test.ts > FIX C regression: retry must not report deletion success when stat is unavailable but ciphertext still exists
+{"deletionRetryStatus":503,"ciphertextStillExists":true,"documentRows":1}
+
+stdout | tests/independent/e1-s2-corrective-api.test.ts > FIX F regression: an unexpected validation failure after logout must suppress stale cookies too
+{"unexpectedValidationStatus":401,"staleCookiePresent":false,"publishedRows":0}
+
+ ✓ tests/independent/e1-s2-corrective-api.test.ts (10 tests) 2531ms
+   ✓ FIX G/H: international filename and PDF-ending policy remain bounded; exact old save boundary remains accepted 478ms
+   ✓ FIX K: persisted error/deleting cases and documents count toward documented quotas; failures leave no permanent quota 441ms
+stdout | tests/independent/e1-s2-corrective-worker.test.ts > FIX A: repeated conservative deadline failures and invalid input terminate their real workers
+{"controlledFailures":3,"remainingObservedWorkers":0}
+
+stdout | tests/independent/e1-s2-corrective-worker.test.ts > FIX A: default three-second deadline controls an idle worker without a resource-heavy PDF
+{"idleWorkerDefaultTimeoutMilliseconds":3018,"remainingObservedWorkers":0}
+
+stdout | tests/independent/e1-s2-corrective-worker.test.ts > FIX A/E lifecycle regression: validation must not settle until worker termination has actually completed
+{"validationSettledBeforeWorkerExit":false,"workerThreadStillRegistered":false}
+
+ ❯ tests/independent/e1-s2-corrective-worker.test.ts (5 tests | 1 failed) 3573ms
+   × FIX A: real PDF parsing uses configured worker heap limits, default deadline and leaves the event loop available 284ms
+     → expected undefined to be 64 // Object.is equality
+   ✓ FIX A: default three-second deadline controls an idle worker without a resource-heavy PDF 3024ms
+ ✓ tests/independent/e1-s2-corrective-isolation.test.ts (5 tests) 2955ms
+   ✓ isolation: browser configuration must neutralize inherited private storage overrides 399ms
+   ✓ isolation: separate direct config processes choose distinct disposable runtimes 2375ms
+ ✓ tests/independent/e1-s2-corrective-startup.test.ts (2 tests) 2564ms
+   ✓ FIX J: actual main starts fresh isolated storage, preserves liveness and reports ready 1354ms
+   ✓ FIX J: actual key-initialization failure keeps health/auth live and returns generic readiness/private failures 1208ms
+ ✓ tests/independent/e1-s2-corrective-hygiene.test.ts (1 test) 2850ms
+   ✓ FIX G: the unchanged hygiene check detects a synthetic raw direction-control character and accepts its removal 2849ms
+stdout | tests/independent/e1-s2-corrective-ui.test.tsx > FIX D regression: ambiguous response after account change must recheck identity before showing another account cases
+{"identityChecks":2,"newAccountCaseShown":false,"oldIdentityStillShown":false}
+
+ ✓ tests/independent/e1-s2-corrective-ui.test.tsx (5 tests) 1087ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/independent/e1-s2-corrective-worker.test.ts > FIX A: real PDF parsing uses configured worker heap limits, default deadline and leaves the event loop available
+AssertionError: expected undefined to be 64 // Object.is equality
+
+- Expected: 
+64
+
++ Received: 
+undefined
+
+ ❯ tests/independent/e1-s2-corrective-worker.test.ts:26:64
+     24|   expect(await pending).toEqual({pages:1});const record=observed[0]!;
+     25|   expect(record.options.resourceLimits).toMatchObject({maxOldGeneratio…
+     26|   expect(record.worker.resourceLimits?.maxOldGenerationSizeMb).toBe(64…
+       |                                                                ^
+     27|   await vi.waitFor(()=>expect(record.worker.threadId).toBe(-1));
+     28|   console.log(JSON.stringify({validPdfMilliseconds:Math.round(performa…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+ Test Files  1 failed | 5 passed (6)
+      Tests  1 failed | 27 passed (28)
+   Start at  23:28:54
+   Duration  21.20s (transform 321ms, setup 1.18s, collect 1.73s, tests 15.56s, environment 862ms, prepare 683ms)
+
+====================================================================================================
+OUTPUT typecheck.log
+====================================================================================================
+
+> project-second-chance@0.0.0 typecheck
+> tsc --noEmit -p tsconfig.json
+
+====================================================================================================
+OUTPUT verify-secrets.log
+====================================================================================================
+
+> project-second-chance@0.0.0 verify:secrets
+> node scripts/verify-secrets.mjs
+
+verify-secrets: no credential leak patterns found in tracked source.
+

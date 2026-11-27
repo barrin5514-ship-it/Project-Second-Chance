@@ -1,0 +1,82 @@
+[
+  {
+    "Path": "README.md",
+    "Hash": "AB89E272289DBEA17D71D710225CDC201DA3BDE96C587480968A843B4AE8060C"
+  },
+  {
+    "Path": "_bmad-output/implementation-artifacts/spec-e1-s2-private-documents.md",
+    "Hash": "A413DCB0D13BA5BB33019B2764536DA30A0616B7A2406CFAFCC288FB4D08EC6B"
+  },
+  {
+    "Path": "apps/server/src/auth/authConfig.ts",
+    "Hash": "859047BA7CB1DBFA5257F28178AA7850876AAFAE9CC394677B5090F18F29DCD8"
+  },
+  {
+    "Path": "apps/server/src/private/pdfValidation.ts",
+    "Hash": "DE153AD44481AA66F54E288221F1C176E924DCE16842CFA2B5EA15F8AE5F666E"
+  },
+  {
+    "Path": "apps/server/src/private/privateConfig.ts",
+    "Hash": "5E3AF640598B16A61530E065CDF4127FDC0CB11013D4B1C8150A05BCB67D6EF1"
+  },
+  {
+    "Path": "apps/server/src/private/privateRoutes.test.ts",
+    "Hash": "92607C3A9FA4D4EA9CD965107525333F1753F1F8CE07B888A69169840F646676"
+  },
+  {
+    "Path": "apps/server/src/private/privateRoutes.ts",
+    "Hash": "F339235BFDE6F2321110011681703EF66E91B5EA10C938008F3839CAAD0C4B87"
+  },
+  {
+    "Path": "apps/server/src/private/privateStore.ts",
+    "Hash": "BF02DDA894B986F129723DAB734392BE265C694E1853C7BCFF8FFC70B92F0BBC"
+  },
+  {
+    "Path": "apps/web/src/cases/CasesPage.tsx",
+    "Hash": "54A8656176E09F73D7A21FF1322038294C2FFFE360268163ADCF6C52A234D719"
+  },
+  {
+    "Path": "apps/web/src/cases/casesClient.test.ts",
+    "Hash": "36EF6B53FDA270CB73D4699F268CF96C1B31ADF6836B182A6B8894AD066D3CD4"
+  },
+  {
+    "Path": "apps/web/src/cases/casesClient.ts",
+    "Hash": "C026D441CD7A567EA3D81CE582AC0F1FBBB60CF290A098071F37DCA1E414FB63"
+  },
+  {
+    "Path": "docs/adr/0002-authentication-and-sessions.md",
+    "Hash": "5C7A5259F7B7F5C36291E25E3AA865619FFA1A89984BFDC771D06B082EF57ADA"
+  },
+  {
+    "Path": "docs/adr/0003-private-storage-and-key-management.md",
+    "Hash": "DE5A7A29A44952961F34F5788CF4CBF21DA35DCB609277B9DB0E5A607A6AC2F3"
+  },
+  {
+    "Path": "docs/adr/0004-upload-validation-and-limits.md",
+    "Hash": "4B68C7D6541B0F6C0E17F4254CDBF369093D11555D417D47A20B0DB54CB90B44"
+  },
+  {
+    "Path": "docs/evidence/E1-S2-builder.md",
+    "Hash": "BB9DBD1DA1D5860C956C5A0D511ECCD3891C7A1B029D9D4EE1EB43C12D215C05"
+  },
+  {
+    "Path": "docs/planning/RISK_DRIVEN_DELIVERY.md",
+    "Hash": "0B3DE586DA9783080AB55CF99101735EFC909CF53365E23A6C9C9ABC6E2A8627"
+  },
+  {
+    "Path": "docs/planning/RISK_REGISTER.md",
+    "Hash": "D2681C1435BDFB3747BAEB7A0D9A8CD14F8A1E17633F854C3950993C2BA47755"
+  },
+  {
+    "Path": "docs/security/threat-model.md",
+    "Hash": "4998849DC7FC778784DD85713E915AAEF1DDE8A640B0B7DADF2348028369736A"
+  },
+  {
+    "Path": "playwright.config.ts",
+    "Hash": "A9CE77A98A3C15D5C95C62770CA931457F238020D388EEC04E506188CFBE8946"
+  },
+  {
+    "Path": "scripts/check-test-isolation.mjs",
+    "Hash": "C03668A8393220B3080595DA9A8958F9A638BDCB1024EC22F54A7DA1DC76E650"
+  }
+]

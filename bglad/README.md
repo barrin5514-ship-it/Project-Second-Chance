@@ -44,7 +44,7 @@ node bglad/orchestrator.mjs run --task bglad/task.json --builder-dsh
 
 ## Windows Codex behavioral test runner
 
-The failure was specific to the **elevated Windows sandbox** and esbuild’s access to the user-profile root (`<owner-home>`): the sandbox reserves that root even when a broader read rule is granted. MXC could read the runner but rejected the repository’s required directory-junction tests; `unelevated` could create junctions but could not spawn esbuild.
+The failure was specific to the **elevated Windows sandbox** and esbuild’s access to the user-profile root (`<owner-home>
 
 Verified minimum-permission method:
 

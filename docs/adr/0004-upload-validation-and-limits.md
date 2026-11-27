@@ -35,13 +35,14 @@
 
 - Per account: 100 live cases, 100 live documents total. Persisted cases (including error/deleting states awaiting cleanup) count; documents count unless they are in the transient pending upload state. Failed uploads that never allocated a row do not consume quota.
 - Per case: 50 live documents.
-- Per user: **2 concurrent uploads** (proposed, pending owner approval). A third concurrent upload receives generic `429 {error:"too-many-uploads"}` with `Retry-After: 1`; a slot represents actual parsing/validation work and is released when that work terminates, not merely when the response finishes or the client disconnects. The counter is in-memory and per-process, so this is a local-demo guard rather than a distributed lock.
+- Per user: **2 concurrent uploads** (proposed, pending owner approval). A third concurrent upload receives generic `429 {error:"too-many-uploads"}` with `Retry-After: 1`; the slot represents actual parsing/validation work and is released only when that work terminates, including the PDF worker's exit acknowledgement, not merely when the response finishes or the client disconnects. The counter is in-memory and per-process, so this is a local-demo guard rather than a distributed lock.
 - These are counted before publication as a best-effort check; the local single-process demo does not claim serializable quota enforcement under concurrent uploads. A future hosted/multi-process design needs a stronger quota lock.
 - Oversized/multiple/part-overflow requests are rejected before encryption/publication.
 
 ### D4 — Error and logging policy
 
 - Generic client responses: `invalid-upload`, `payload-too-large`, `not-found`, `unavailable`, `invalid-request`.
+- Quota refusals currently use the generic `invalid-request` path; this can give field/file-format advice instead of naming the reached quota. That is a documented usability residual; no stronger quota protocol is approved.
 - No original filename, content, hash, detected MIME, parser message, key, nonce, path or stack in logs/errors. Tests capture responses and assert canaries are absent.
 - Upload cancellation/failure leaves no plaintext temp file; encryption happens before any staged write.
 
